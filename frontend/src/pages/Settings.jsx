@@ -4,6 +4,7 @@ import { api, getFileUrl } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import Avatar from '../components/Avatar.jsx';
+import ImageCropper from '../components/ImageCropper.jsx';
 import { normalizeImageFile } from '../lib/imageProcessing.js';
 
 const GAMER_PLATFORMS = ['psn', 'xbox', 'pc'];
@@ -34,6 +35,10 @@ export default function Settings() {
   const [linked, setLinked] = useState({});
   const [pingPlatform, setPingPlatform] = useState('');
   const [pingMessage, setPingMessage] = useState('');
+  // holds { kind: 'avatar'|'cover', file } while the crop modal is open --
+  // the raw picked file is never uploaded directly, only what the cropper
+  // exports on confirm (see handleCropped below)
+  const [cropTarget, setCropTarget] = useState(null);
 
   useEffect(() => {
     api.linkedAccounts.mine().then((rows) => {
@@ -56,11 +61,8 @@ export default function Settings() {
 
   async function uploadPhoto(kind, file) {
     if (!file) return;
-    // converts iPhone HEIC photos (and anything else) to a plain JPEG --
-    // see lib/imageProcessing.js
-    const normalized = await normalizeImageFile(file);
     const formData = new FormData();
-    formData.append('photo', normalized);
+    formData.append('photo', file);
     try {
       await (kind === 'avatar' ? api.users.uploadAvatar(formData) : api.users.uploadCover(formData));
       await refreshUser();
@@ -68,6 +70,25 @@ export default function Settings() {
     } catch (err) {
       toast(err.message, 'error');
     }
+  }
+
+  async function handlePhotoPicked(kind, file) {
+    if (!file) return;
+    // normalize (HEIC -> JPEG, EXIF orientation baked in) *before* handing
+    // to the cropper -- its own preview is a plain <img>, same HEIC
+    // decoding problem as a direct upload would've had. see
+    // lib/imageProcessing.js for why this matters.
+    const normalized = await normalizeImageFile(file);
+    setCropTarget({ kind, file: normalized });
+  }
+
+  async function handleCropped(croppedFile) {
+    const kind = cropTarget.kind;
+    setCropTarget(null);
+    // the cropper's canvas export is already a clean, correctly-oriented
+    // JPEG -- normalizeImageFile's HEIC/orientation handling only matters
+    // for the raw picked file, which the crop step already consumed
+    await uploadPhoto(kind, croppedFile);
   }
 
   async function saveLinkedAccount(platform, handle, url) {
@@ -119,14 +140,24 @@ export default function Settings() {
         <label className="photo-upload">
           <Avatar user={user} size={80} />
           <span>Change avatar</span>
-          <input type="file" accept="image/*" hidden onChange={(e) => uploadPhoto('avatar', e.target.files[0])} />
+          <input type="file" accept="image/*" hidden onChange={(e) => handlePhotoPicked('avatar', e.target.files[0])} />
         </label>
         <label className="photo-upload cover-upload">
           {user.cover_url ? <img src={getFileUrl(user.cover_url)} alt="" /> : <span className="cover-placeholder">No cover photo</span>}
           <span>Change cover</span>
-          <input type="file" accept="image/*" hidden onChange={(e) => uploadPhoto('cover', e.target.files[0])} />
+          <input type="file" accept="image/*" hidden onChange={(e) => handlePhotoPicked('cover', e.target.files[0])} />
         </label>
       </div>
+
+      {cropTarget && (
+        <ImageCropper
+          file={cropTarget.file}
+          aspect={cropTarget.kind === 'avatar' ? 1 : 3}
+          shape={cropTarget.kind === 'avatar' ? 'circle' : 'rect'}
+          onCancel={() => setCropTarget(null)}
+          onCropped={handleCropped}
+        />
+      )}
 
       <form onSubmit={saveProfile} className="auth-form">
         <label>

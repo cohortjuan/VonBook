@@ -49,6 +49,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_one_founder ON users ((is_founder)) 
 CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at) WHERE deleted_at IS NOT NULL;
 
 -- ---------------------------------------------------------------------
+-- is_dev was added to the users table above *after* this schema had
+-- already been deployed once. CREATE TABLE IF NOT EXISTS is a complete
+-- no-op against a table that already exists -- it does NOT add new
+-- columns to it, so a database that ran ensureSchema() before is_dev
+-- existed here would never actually get the column, and every query that
+-- selects it (basically any profile fetch) would start throwing "column
+-- does not exist" -- exactly the bug that shipped once already (see
+-- git history). ADD COLUMN IF NOT EXISTS is the one form that's correct
+-- both for a brand-new database (already has it from the CREATE TABLE
+-- above, this is a no-op) and one that predates this column (this is
+-- what actually adds it).
+-- ---------------------------------------------------------------------
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_dev BOOLEAN NOT NULL DEFAULT false;
+
+-- ---------------------------------------------------------------------
 -- sessions: opaque random tokens, hashed at rest, revocable by deleting
 -- the row -- same reasoning as Whispers App (see that project's
 -- database/schema.sql for the long version of this comment).
