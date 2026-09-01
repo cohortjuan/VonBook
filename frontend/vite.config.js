@@ -11,6 +11,18 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // autoUpdate alone only downloads the new service worker and lets it
+      // sit in "waiting" -- without these two, it doesn't actually take
+      // over until every open tab of the site is fully closed, so a
+      // deploy can look like it silently didn't happen if a tab was left
+      // open (the exact confusion that prompted this comment). skipWaiting
+      // activates the new worker immediately; clientsClaim lets it start
+      // controlling already-open pages right away instead of waiting for
+      // their next navigation.
+      workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+      },
       includeAssets: ['icon.svg'],
       manifest: {
         name: 'VonBook',
