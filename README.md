@@ -59,9 +59,9 @@ Same two services as this folder's Whispers App project, but wired differently: 
 
 4. **Back on Render**: edit the `CORS_ORIGIN` env var to your real Vercel URL from step 3, save (this redeploys automatically). Without this the backend rejects every request from the deployed frontend.
 
-**Two honest caveats about Render's free tier**, not bugs:
-- The free Postgres database **expires after 90 days** — Render emails a warning; upgrade it or take a `pg_dump` backup before then if you want to keep it going.
-- Free web services have **no persistent disk**, so uploaded photos/videos vanish on every redeploy (the filesystem resets). Fine for testing; if that matters long-term, add a Render Disk and point `UPLOAD_DIR_PATH` (see `backend/.env.example`) at its mount path, or swap the upload code for S3-style object storage.
+5. **Persistent uploads** (needs a paid Render instance — Disks aren't available on the free plan): backend service → **Disks** tab → Add Disk → mount path `/var/data/uploads`, 1GB is plenty. Then add env var `UPLOAD_DIR_PATH` = `/var/data/uploads` (the upload code already reads this, see `backend/src/middleware/upload.js`). Without this step, avatars/post photos/videos vanish every time the backend redeploys, because a plain web service's filesystem is ephemeral. `render.yaml` documents this setup (commented for a paid plan) if the service is ever recreated from scratch.
+
+**One honest caveat that's still true either way**: Render's **free** Postgres database expires after 90 days — Render emails a warning; upgrade it or take a `pg_dump` backup before then if you want to keep it going. (Unrelated to the Disk above — that's about the database, not file storage.)
 
 ## The founder account
 
