@@ -15,7 +15,7 @@ messagesRouter.get('/conversations', async (req, res, next) => {
       `SELECT c.id, c.is_group, c.title,
               other.id AS other_user_id, other.username AS other_username,
               other.display_name AS other_display_name, other.avatar_url AS other_avatar_url,
-              other.is_founder AS other_is_founder,
+              other.is_founder AS other_is_founder, other.is_dev AS other_is_dev,
               m.body AS last_message_body, m.created_at AS last_message_at, m.sender_id AS last_message_sender_id,
               me.last_read_at
        FROM conversation_participants me

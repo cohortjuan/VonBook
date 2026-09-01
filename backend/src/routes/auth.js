@@ -76,6 +76,7 @@ function publicUser(row) {
     birthday: row.birthday,
     is_founder: row.is_founder,
     founder_title: row.founder_title,
+    is_dev: row.is_dev,
     now_playing: row.now_playing,
     created_at: row.created_at,
   };

@@ -7,6 +7,10 @@ import AlienLogo from './AlienLogo.jsx';
 const OVERLAY_LEAD_SECONDS = 5;
 // must match the .intro-splash-frame.power-off animation duration in css
 const POWER_OFF_MS = 650;
+// duration/currentTime (and so the OVERLAY_LEAD_SECONDS check above) are
+// unaffected by this -- playbackRate only changes how fast real time maps
+// to media time, not the media's own reported position
+const PLAYBACK_RATE = 1.1;
 
 // plays once, in front of the real Landing page underneath (still mounted
 // the whole time -- this is purely an overlay). in the last few seconds of
@@ -27,6 +31,7 @@ export default function IntroSplash({ onFinished }) {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    video.playbackRate = PLAYBACK_RATE;
 
     function handleTimeUpdate() {
       if (video.duration && video.duration - video.currentTime <= OVERLAY_LEAD_SECONDS) {

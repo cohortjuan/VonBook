@@ -11,7 +11,7 @@ notificationsRouter.get('/', async (req, res, next) => {
     const result = await pool.query(
       `SELECT n.id, n.type, n.payload, n.read_at, n.created_at,
               a.id AS actor_id, a.username AS actor_username, a.display_name AS actor_display_name,
-              a.avatar_url AS actor_avatar_url, a.is_founder AS actor_is_founder
+              a.avatar_url AS actor_avatar_url, a.is_founder AS actor_is_founder, a.is_dev AS actor_is_dev
        FROM notifications n
        LEFT JOIN users a ON a.id = n.actor_id
        WHERE n.recipient_id = $1 AND ($2::int IS NULL OR n.id < $2)

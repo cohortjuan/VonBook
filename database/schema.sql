@@ -28,6 +28,12 @@ CREATE TABLE IF NOT EXISTS users (
   -- so the claim code can never mint a second "founder".
   is_founder             BOOLEAN NOT NULL DEFAULT false,
   founder_title          VARCHAR(100),
+  -- the person who actually built this app -- a plain badge (gold ring on
+  -- the avatar, see frontend/src/components/Avatar.jsx), not claimed via
+  -- any code like is_founder. no uniqueness enforced: unlike the founder
+  -- slot this was never meant to be scarce, just unlikely to ever apply
+  -- to more than one row in practice.
+  is_dev                 BOOLEAN NOT NULL DEFAULT false,
   -- "currently playing" status, gamer-hub feature -- free text (not tied
   -- to any game database), shown as a badge on the profile and in friend
   -- lists. null/empty means not shown at all.

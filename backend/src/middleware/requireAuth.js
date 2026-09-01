@@ -13,7 +13,7 @@ export async function requireAuth(req, res, next) {
     const result = await pool.query(
       `SELECT s.id AS session_id, s.csrf_token, s.expires_at,
               u.id AS user_id, u.email, u.username, u.display_name,
-              u.avatar_url, u.is_founder, u.founder_title
+              u.avatar_url, u.is_founder, u.founder_title, u.is_dev
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = $1 AND u.deleted_at IS NULL`,
@@ -33,6 +33,7 @@ export async function requireAuth(req, res, next) {
       avatar_url: row.avatar_url,
       is_founder: row.is_founder,
       founder_title: row.founder_title,
+      is_dev: row.is_dev,
     };
     // csrf.js reads req.session.csrfToken; must run requireAuth before it
     req.session = { id: row.session_id, csrfToken: row.csrf_token };

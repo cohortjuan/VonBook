@@ -8,7 +8,7 @@ import { normalizeUsername } from '../lib/normalize.js';
 
 export const postsRouter = Router();
 
-const AUTHOR_COLUMNS = 'u.id AS author_id, u.username AS author_username, u.display_name AS author_display_name, u.avatar_url AS author_avatar_url, u.is_founder AS author_is_founder, u.founder_title AS author_founder_title';
+const AUTHOR_COLUMNS = 'u.id AS author_id, u.username AS author_username, u.display_name AS author_display_name, u.avatar_url AS author_avatar_url, u.is_founder AS author_is_founder, u.founder_title AS author_founder_title, u.is_dev AS author_is_dev';
 
 async function attachMediaAndCounts(posts, viewerId) {
   if (posts.length === 0) return posts;
@@ -120,7 +120,7 @@ postsRouter.post('/', mediaUpload.array('media', 10), async (req, res, next) => 
       await client.query('COMMIT');
 
       const [full] = await attachMediaAndCounts(
-        [{ ...post, author_id: req.user.id, author_username: req.user.username, author_display_name: req.user.display_name, author_avatar_url: req.user.avatar_url, author_is_founder: req.user.is_founder, author_founder_title: req.user.founder_title }],
+        [{ ...post, author_id: req.user.id, author_username: req.user.username, author_display_name: req.user.display_name, author_avatar_url: req.user.avatar_url, author_is_founder: req.user.is_founder, author_founder_title: req.user.founder_title, author_is_dev: req.user.is_dev }],
         req.user.id,
       );
       res.status(201).json(full);
@@ -184,7 +184,8 @@ postsRouter.get('/:postId/comments', async (req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT c.id, c.body, c.created_at, u.id AS author_id, u.username AS author_username,
-              u.display_name AS author_display_name, u.avatar_url AS author_avatar_url, u.is_founder AS author_is_founder
+              u.display_name AS author_display_name, u.avatar_url AS author_avatar_url, u.is_founder AS author_is_founder,
+              u.is_dev AS author_is_dev
        FROM post_comments c JOIN users u ON u.id = c.author_id
        WHERE c.post_id = $1
        ORDER BY c.created_at ASC`,
@@ -222,6 +223,7 @@ postsRouter.post('/:postId/comments', async (req, res, next) => {
       author_display_name: req.user.display_name,
       author_avatar_url: req.user.avatar_url,
       author_is_founder: req.user.is_founder,
+      author_is_dev: req.user.is_dev,
     });
   } catch (err) {
     next(err);

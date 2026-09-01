@@ -5,7 +5,7 @@ import { createNotification } from '../lib/notify.js';
 
 export const friendsRouter = Router();
 
-const PUBLIC_COLUMNS = 'u.id, u.username, u.display_name, u.avatar_url, u.is_founder, u.founder_title, u.now_playing';
+const PUBLIC_COLUMNS = 'u.id, u.username, u.display_name, u.avatar_url, u.is_founder, u.founder_title, u.is_dev, u.now_playing';
 
 function parseUserId(req, res) {
   const id = Number(req.params.userId);

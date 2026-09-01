@@ -9,7 +9,7 @@ export const usersRouter = Router();
 
 const PROFILE_FIELDS = `
   id, username, display_name, bio, avatar_url, cover_url, birthday,
-  is_founder, founder_title, now_playing, created_at
+  is_founder, founder_title, is_dev, now_playing, created_at
 `;
 
 // GET /api/users/search?q=partial -- for "add manually": search by

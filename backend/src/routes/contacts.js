@@ -39,7 +39,7 @@ contactsRouter.post('/match', async (req, res, next) => {
     if (emails.size === 0 && phones.size === 0) return res.json([]);
 
     const result = await pool.query(
-      `SELECT id, username, display_name, avatar_url, is_founder, founder_title
+      `SELECT id, username, display_name, avatar_url, is_founder, founder_title, is_dev
        FROM users
        WHERE deleted_at IS NULL
          AND id <> $1
