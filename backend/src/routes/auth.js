@@ -6,6 +6,7 @@ import { csrfProtection } from '../middleware/csrf.js';
 import { hashPassword, verifyPassword, isPasswordStrongEnough, MIN_PASSWORD_LENGTH } from '../lib/password.js';
 import { normalizeEmail, normalizeUsername, isValidUsername } from '../lib/normalize.js';
 import { sendMail } from '../lib/mailer.js';
+import { issueSocketTicket } from '../lib/socketTickets.js';
 import {
   SESSION_COOKIE_NAME,
   CSRF_COOKIE_NAME,
@@ -216,6 +217,12 @@ authRouter.post('/logout', requireAuth, csrfProtection, async (req, res, next) =
   } catch (err) {
     next(err);
   }
+});
+
+// GET /api/auth/socket-ticket -- see lib/socketTickets.js for why the
+// socket connection needs this instead of just using the session cookie
+authRouter.get('/socket-ticket', requireAuth, (req, res) => {
+  res.json({ ticket: issueSocketTicket(req.user.id) });
 });
 
 authRouter.get('/me', requireAuth, async (req, res, next) => {

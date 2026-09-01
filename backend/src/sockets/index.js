@@ -5,6 +5,7 @@ import { isParticipant, getOrCreateDirectConversation } from '../lib/conversatio
 import { isBlockedEitherWay } from '../lib/blocks.js';
 import { createNotification } from '../lib/notify.js';
 import { getFriendIds } from '../lib/friends.js';
+import { redeemSocketTicket } from '../lib/socketTickets.js';
 
 // userId -> Set of live socket ids. purely in-memory: presence resets on
 // server restart, which is fine, a stale "online" dot for a few seconds is
@@ -33,11 +34,33 @@ export function isUserOnline(userId) {
   return onlineSockets.has(userId);
 }
 
+async function loadSocketUser(userId) {
+  const result = await pool.query(
+    `SELECT id, username, display_name, avatar_url FROM users WHERE id = $1 AND deleted_at IS NULL`,
+    [userId],
+  );
+  return result.rows[0] || null;
+}
+
 // socket.io's own handshake doesn't run through express middleware, so
-// requireAuth can't be reused directly -- this re-does the same session
-// cookie lookup by hand, once, at connection time.
+// requireAuth can't be reused directly. Two ways in: a one-time ticket
+// (see lib/socketTickets.js -- the only path that works once frontend and
+// backend are on different sites, since the session cookie itself gets
+// blocked as third-party there) or, as a fallback, the session cookie
+// directly -- still correct and simpler for same-site setups (local dev,
+// or a deployment that proxies everything through one origin).
 async function authenticateSocket(socket, next) {
   try {
+    const ticket = socket.handshake.auth?.ticket;
+    if (ticket) {
+      const userId = redeemSocketTicket(ticket);
+      if (!userId) return next(new Error('unauthorized'));
+      const user = await loadSocketUser(userId);
+      if (!user) return next(new Error('unauthorized'));
+      socket.user = user;
+      return next();
+    }
+
     const raw = socket.handshake.headers.cookie;
     const parsed = raw ? cookie.parse(raw) : {};
     const token = parsed[SESSION_COOKIE_NAME];

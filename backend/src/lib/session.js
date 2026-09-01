@@ -29,22 +29,23 @@ export function hashToken(token) {
 // explicit env override, else guess from NODE_ENV, so local dev (plain
 // http, can't set Secure at all) and a real deploy both just work.
 //
-// SameSite=None in production, not Lax: unlike Whispers App (frontend
-// proxies /api/* through its own Vercel domain, so the browser only ever
-// talks to itself -- see that project's api/client.js), VonBook's frontend
-// talks to the Render backend directly, including the Socket.IO
-// connection that powers chat/calls/presence. A plain WebSocket handshake
-// is a cross-site *subresource* request, not a top-level navigation --
-// SameSite=Lax's one exemption -- so Lax would silently drop the session
-// cookie on it and every socket connection would 401. None sends the
-// cookie on both the (cross-site) socket handshake and the (also
-// cross-site) REST calls alike; it requires Secure, which every real
-// deploy has anyway (this is meaningless without https).
+// SameSite=Lax, same as Whispers App: the frontend's vercel.json proxies
+// /api/* and /uploads/* to this backend, so from the browser's point of
+// view every REST call is same-origin -- it never talks to the Render
+// domain directly. (An earlier version of this had the frontend calling
+// Render directly and set SameSite=None here to compensate -- that
+// doesn't actually work: modern browsers block cross-site cookies as
+// "third party" regardless of SameSite=None, so login would appear to
+// succeed but every subsequent request silently wouldn't carry the
+// cookie. Same-origin via the proxy is what actually fixes it, not a
+// cookie attribute.) The one thing that's still genuinely cross-site is
+// the Socket.IO connection (can't be proxied the same way) -- that
+// authenticates with a short-lived ticket instead of this cookie, see
+// lib/socketTickets.js.
 export function resolveCookieOptions() {
   const secureProd =
     process.env.COOKIE_SECURE === 'true' ||
     (process.env.COOKIE_SECURE !== 'false' && process.env.NODE_ENV === 'production');
-  const sameSite = process.env.COOKIE_SAMESITE || (secureProd ? 'none' : 'lax');
 
-  return { secure: secureProd, sameSite };
+  return { secure: secureProd, sameSite: 'lax' };
 }

@@ -3,7 +3,22 @@
 // other apps: the session lives in an httpOnly cookie the backend manages
 // entirely, and vonbook_csrf is the deliberately-readable half of the
 // double-submit csrf check.
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:4000/api').replace(/\/$/, '');
+//
+// Relative ("/api") in prod by default, same as Whispers App -- vercel.json
+// rewrites /api/* and /uploads/* to the Render backend, so the browser only
+// ever talks to this site's own origin. That's not just tidiness: the
+// session cookie set by a *different* registrable domain (onrender.com) is
+// a third-party cookie from a page served at vercel.app, and modern
+// browsers (Safari/Firefox always, Chrome increasingly) block those by
+// default regardless of SameSite=None -- login would appear to succeed
+// (the response body has the user), but the very next request silently
+// wouldn't carry the cookie at all. Same-origin via the proxy sidesteps
+// that entirely. Socket.IO can't be proxied the same way (see
+// context/SocketContext.jsx for how that connection authenticates instead).
+const API_URL = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:4000/api')).replace(
+  /\/$/,
+  '',
+);
 
 const CSRF_COOKIE = 'vonbook_csrf';
 const CSRF_HEADER = 'X-CSRF-Token';
@@ -61,6 +76,10 @@ export const api = {
     forgotPassword: (email) => request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
     resetPassword: (token, password) =>
       request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
+    // short-lived, one-time ticket for the socket handshake -- see
+    // context/SocketContext.jsx for why the socket can't just rely on the
+    // cookie the way the REST calls above do
+    socketTicket: () => request('/auth/socket-ticket'),
   },
   users: {
     search: (q) => request(`/users/search?q=${encodeURIComponent(q)}`),
