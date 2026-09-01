@@ -66,6 +66,25 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 
 -- ---------------------------------------------------------------------
+-- password_resets: same opaque-token-hashed-at-rest pattern as sessions
+-- above. One-time use (used_at set the moment it's redeemed, checked
+-- atomically in the same UPDATE that redeems it -- see routes/auth.js) and
+-- expires on its own regardless. A user can have several outstanding rows
+-- if they hit "forgot password" more than once -- only ever the one they
+-- actually click through ever gets used, the rest just expire unused.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS password_resets (
+  id          SERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL UNIQUE,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  used_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_resets_user_id ON password_resets(user_id);
+
+-- ---------------------------------------------------------------------
 -- friendships: one row per pair, direction only matters for who has to
 -- accept. LEAST/GREATEST unique index below stops a user from ever having
 -- two rows with the same other person (a stray double request, or a

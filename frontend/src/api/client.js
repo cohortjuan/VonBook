@@ -58,6 +58,9 @@ export const api = {
     signup: (body) => request('/auth/signup', { method: 'POST', body: JSON.stringify(body) }),
     login: (body) => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
     logout: () => request('/auth/logout', { method: 'POST' }),
+    forgotPassword: (email) => request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+    resetPassword: (token, password) =>
+      request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
   },
   users: {
     search: (q) => request(`/users/search?q=${encodeURIComponent(q)}`),

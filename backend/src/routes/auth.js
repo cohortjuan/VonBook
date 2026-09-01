@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { csrfProtection } from '../middleware/csrf.js';
 import { hashPassword, verifyPassword, isPasswordStrongEnough, MIN_PASSWORD_LENGTH } from '../lib/password.js';
 import { normalizeEmail, normalizeUsername, isValidUsername } from '../lib/normalize.js';
+import { sendMail } from '../lib/mailer.js';
 import {
   SESSION_COOKIE_NAME,
   CSRF_COOKIE_NAME,
@@ -40,6 +41,18 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'too many login attempts, please try again later' },
 });
+
+// same shape as loginLimiter -- requesting a reset is still "does this
+// email have an account", the same enumeration/brute-force risk as login
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too many requests, please try again later' },
+});
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 function setAuthCookies(res, { token, csrfToken }) {
   const { secure, sameSite } = resolveCookieOptions();
@@ -209,6 +222,108 @@ authRouter.get('/me', requireAuth, async (req, res, next) => {
   try {
     const result = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
     res.json(publicUser(result.rows[0]));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/forgot-password { email }
+// -> always 200 with the same generic message, whether or not that email
+// has an account -- a different response for "no such email" would let
+// anyone check who's signed up just by trying addresses. If it does match
+// an account, this mails a one-hour link (logged to the server console
+// instead, until SMTP_HOST is actually configured -- see lib/mailer.js).
+authRouter.post('/forgot-password', forgotPasswordLimiter, async (req, res, next) => {
+  try {
+    const email = normalizeEmail(req.body.email);
+    const genericResponse = { message: "if that email has an account, we've sent a reset link" };
+    if (!email || !email.includes('@')) return res.json(genericResponse);
+
+    const result = await pool.query('SELECT id, display_name FROM users WHERE email = $1 AND deleted_at IS NULL', [email]);
+    const user = result.rows[0];
+
+    if (user) {
+      const token = generateToken();
+      const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+      await pool.query(
+        `INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+        [user.id, hashToken(token), expiresAt],
+      );
+
+      const frontendUrl = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
+      const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+
+      // not awaited before responding -- an email provider being slow or
+      // down should never delay this response (which is identical either
+      // way, see genericResponse above)
+      sendMail({
+        to: email,
+        subject: 'Reset your VonBook password',
+        text: `Hey ${user.display_name},\n\nSomeone (hopefully you) asked to reset your VonBook password. This link works for 1 hour:\n\n${resetLink}\n\nIf this wasn't you, just ignore this -- your password hasn't changed.`,
+      }).catch(() => {});
+    }
+
+    res.json(genericResponse);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/reset-password { token, password }
+authRouter.post('/reset-password', async (req, res, next) => {
+  try {
+    const token = typeof req.body.token === 'string' ? req.body.token : '';
+    const { password } = req.body;
+    if (!token) return res.status(400).json({ error: 'missing reset token' });
+    if (!isPasswordStrongEnough(password)) {
+      return res.status(400).json({ error: `password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+    }
+
+    const result = await pool.query(
+      `SELECT id, user_id, expires_at, used_at FROM password_resets WHERE token_hash = $1`,
+      [hashToken(token)],
+    );
+    const resetRow = result.rows[0];
+    if (!resetRow || resetRow.used_at || new Date(resetRow.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'that reset link is invalid or has expired -- request a new one' });
+    }
+
+    const passwordHash = await hashPassword(password);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // conditioned on used_at IS NULL, not just the earlier SELECT --
+      // same "atomic claim" reasoning as the invite-code redemption
+      // pattern in Whispers App: two requests racing to use the same
+      // token could otherwise both pass the check above and both succeed
+      const claimed = await client.query(
+        `UPDATE password_resets SET used_at = now() WHERE id = $1 AND used_at IS NULL RETURNING id`,
+        [resetRow.id],
+      );
+      if (claimed.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'that reset link is invalid or has expired -- request a new one' });
+      }
+
+      await client.query(
+        `UPDATE users SET password_hash = $2, failed_login_attempts = 0, locked_until = NULL, updated_at = now() WHERE id = $1`,
+        [resetRow.user_id, passwordHash],
+      );
+      // a password reset revokes every existing session -- if the account
+      // was compromised, this is what actually locks the old owner out
+      await client.query('DELETE FROM sessions WHERE user_id = $1', [resetRow.user_id]);
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    res.status(204).end();
   } catch (err) {
     next(err);
   }
