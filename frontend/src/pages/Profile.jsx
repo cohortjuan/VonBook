@@ -29,7 +29,7 @@ function isTodayBirthday(birthdayStr) {
 
 export default function Profile() {
   const { username } = useParams();
-  const { user: me, refreshUser } = useAuth();
+  const { user: me, refreshUser, logout } = useAuth();
   const { startCall } = useCall();
   const toast = useToast();
   const navigate = useNavigate();
@@ -87,6 +87,11 @@ export default function Profile() {
     }
   }
 
+  async function handleLogout() {
+    await logout();
+    navigate('/login');
+  }
+
   async function handleMessage() {
     try {
       const convo = await api.messages.openDirect(profile.id);
@@ -125,9 +130,14 @@ export default function Profile() {
 
         <div className="profile-actions">
           {isSelf && (
-            <Link className="btn-secondary" to="/settings">
-              Edit profile
-            </Link>
+            <>
+              <Link className="btn-secondary" to="/settings">
+                Edit profile
+              </Link>
+              <button className="btn-secondary" onClick={handleLogout}>
+                Log out
+              </button>
+            </>
           )}
           {profile.relationship === 'none' && (
             <button className="btn-primary" disabled={busy} onClick={() => withBusy(() => api.friends.sendRequest(profile.id))}>
