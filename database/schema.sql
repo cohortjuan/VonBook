@@ -1,0 +1,239 @@
+-- VonBook db schema
+-- runs automatically when the docker container first spins up,
+-- or run it yourself with: psql "$DATABASE_URL" -f database/schema.sql
+
+BEGIN;
+
+-- ---------------------------------------------------------------------
+-- users: one login = one profile. username is the @handle used for
+-- friend search and mentions; email is used for login + contact matching.
+-- Both are always stored + compared lowercased at the app level (see
+-- backend/src/lib/normalize.js), same reasoning as Whispers App: keeps
+-- this schema extension-free instead of relying on citext.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS users (
+  id                     SERIAL PRIMARY KEY,
+  email                  VARCHAR(255) NOT NULL UNIQUE,
+  username               VARCHAR(30) NOT NULL UNIQUE,
+  phone                  VARCHAR(20) UNIQUE,
+  password_hash          TEXT NOT NULL,
+  display_name           VARCHAR(100) NOT NULL,
+  bio                    TEXT,
+  avatar_url             TEXT,
+  cover_url              TEXT,
+  birthday               DATE,
+  -- the birthday boy's own account, claimed once at signup with
+  -- FOUNDER_CLAIM_CODE (see backend/src/routes/auth.js). the partial
+  -- unique index below guarantees at most one row can ever have this set,
+  -- so the claim code can never mint a second "founder".
+  is_founder             BOOLEAN NOT NULL DEFAULT false,
+  founder_title          VARCHAR(100),
+  -- "currently playing" status, gamer-hub feature -- free text (not tied
+  -- to any game database), shown as a badge on the profile and in friend
+  -- lists. null/empty means not shown at all.
+  now_playing            VARCHAR(100),
+  failed_login_attempts  INTEGER NOT NULL DEFAULT 0,
+  locked_until           TIMESTAMPTZ,
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at             TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_one_founder ON users ((is_founder)) WHERE is_founder = true;
+CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at) WHERE deleted_at IS NOT NULL;
+
+-- ---------------------------------------------------------------------
+-- sessions: opaque random tokens, hashed at rest, revocable by deleting
+-- the row -- same reasoning as Whispers App (see that project's
+-- database/schema.sql for the long version of this comment).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sessions (
+  id           SERIAL PRIMARY KEY,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash   TEXT NOT NULL UNIQUE,
+  csrf_token   TEXT NOT NULL,
+  user_agent   TEXT,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+
+-- ---------------------------------------------------------------------
+-- friendships: one row per pair, direction only matters for who has to
+-- accept. LEAST/GREATEST unique index below stops a user from ever having
+-- two rows with the same other person (a stray double request, or a
+-- request crossing an already-accepted row).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS friendships (
+  id            SERIAL PRIMARY KEY,
+  requester_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  addressee_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status        VARCHAR(10) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  responded_at  TIMESTAMPTZ,
+  CONSTRAINT no_self_friend CHECK (requester_id <> addressee_id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_friendships_pair
+  ON friendships (LEAST(requester_id, addressee_id), GREATEST(requester_id, addressee_id));
+CREATE INDEX IF NOT EXISTS idx_friendships_addressee ON friendships(addressee_id, status);
+CREATE INDEX IF NOT EXISTS idx_friendships_requester ON friendships(requester_id, status);
+
+-- ---------------------------------------------------------------------
+-- blocks: one-directional and independent of friendships. Every query
+-- that shows another user's posts, profile, or lets a message through
+-- checks this table both directions -- see requireNotBlocked() in
+-- backend/src/lib/blocks.js. Blocking (or deleting a friend) is what
+-- "severs all connections" means in this app: it deletes the friendships
+-- row (see routes/friends.js) and, via this table, blocks re-adding,
+-- messaging, and feed visibility both ways.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS blocks (
+  id          SERIAL PRIMARY KEY,
+  blocker_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT no_self_block CHECK (blocker_id <> blocked_id),
+  CONSTRAINT unique_block UNIQUE (blocker_id, blocked_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_blocks_blocked_id ON blocks(blocked_id);
+
+-- ---------------------------------------------------------------------
+-- posts / post_media / post_likes / post_comments: the Instagram-style
+-- feed. A post can carry multiple media rows (a carousel) or none (a
+-- text-only status).
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS posts (
+  id          SERIAL PRIMARY KEY,
+  author_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  caption     TEXT,
+  -- optional game name for an achievement/gameplay post -- just a free
+  -- text tag, not a foreign key into any game catalog. set, it renders a
+  -- trophy badge on the post (see frontend/src/components/PostCard.jsx).
+  game_tag    VARCHAR(100),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_posts_author_created ON posts(author_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS post_media (
+  id          SERIAL PRIMARY KEY,
+  post_id     INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  media_url   TEXT NOT NULL,
+  media_type  VARCHAR(10) NOT NULL CHECK (media_type IN ('image', 'video')),
+  position    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_media_post_id ON post_media(post_id);
+
+CREATE TABLE IF NOT EXISTS post_likes (
+  id          SERIAL PRIMARY KEY,
+  post_id     INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (post_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_likes_post_id ON post_likes(post_id);
+
+CREATE TABLE IF NOT EXISTS post_comments (
+  id          SERIAL PRIMARY KEY,
+  post_id     INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  author_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body        TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_comments_post_id ON post_comments(post_id, created_at);
+
+-- ---------------------------------------------------------------------
+-- linked_accounts: other platforms a user has told VonBook about (a
+-- handle/link they typed in themselves -- not a real oauth connection,
+-- see backend/src/routes/linked-accounts.js for why). Covers both social
+-- apps (facebook/instagram/tiktok/snapchat) and gamertags (psn/xbox/pc)
+-- -- same mechanism either way, just a handle + optional profile link.
+-- One row per platform per user.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS linked_accounts (
+  id          SERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  platform    VARCHAR(20) NOT NULL CHECK (platform IN ('facebook', 'instagram', 'tiktok', 'snapchat', 'psn', 'xbox', 'pc', 'other')),
+  handle      VARCHAR(200) NOT NULL,
+  url         TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, platform)
+);
+
+-- ---------------------------------------------------------------------
+-- conversations / conversation_participants / messages: dm + group chat.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS conversations (
+  id          SERIAL PRIMARY KEY,
+  is_group    BOOLEAN NOT NULL DEFAULT false,
+  title       VARCHAR(100),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS conversation_participants (
+  conversation_id  INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_read_at     TIMESTAMPTZ,
+  PRIMARY KEY (conversation_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_participants_user ON conversation_participants(user_id);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id               SERIAL PRIMARY KEY,
+  conversation_id  INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  sender_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body             TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at       TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
+
+-- ---------------------------------------------------------------------
+-- calls: a log entry per call attempt. The actual audio/video never
+-- touches this server -- see backend/src/sockets/index.js, which only
+-- relays webrtc signaling messages peer-to-peer.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS calls (
+  id               SERIAL PRIMARY KEY,
+  conversation_id  INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  caller_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  callee_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  call_type        VARCHAR(10) NOT NULL CHECK (call_type IN ('audio', 'video')),
+  status           VARCHAR(10) NOT NULL DEFAULT 'missed' CHECK (status IN ('missed', 'completed', 'declined')),
+  started_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at         TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_calls_conversation_id ON calls(conversation_id);
+
+-- ---------------------------------------------------------------------
+-- notifications: powers the bell icon. payload is a small json blob
+-- shaped per type (e.g. { postId } for a like, { platform, message } for
+-- a platform_ping) -- see backend/src/lib/notify.js for the one place
+-- that writes these.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS notifications (
+  id            SERIAL PRIMARY KEY,
+  recipient_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  actor_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  type          VARCHAR(20) NOT NULL CHECK (
+                  type IN ('friend_request', 'friend_accept', 'like', 'comment', 'message', 'platform_ping', 'missed_call')
+                ),
+  payload       JSONB,
+  read_at       TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created ON notifications(recipient_id, created_at DESC);
+
+COMMIT;

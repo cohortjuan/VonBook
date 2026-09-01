@@ -1,0 +1,36 @@
+# Render "Blueprint" -- lets Render create the web service + database
+# together from this one file instead of clicking through setup by hand.
+# In the Render dashboard: New > Blueprint > pick this repo.
+#
+# CORS_ORIGIN and FOUNDER_CLAIM_CODE are marked sync: false (prompted for
+# in the dashboard, not stored here) -- CORS_ORIGIN specifically because it
+# has to be the *frontend's* deployed URL, which doesn't exist until the
+# Vercel side is deployed too, so there's no correct value to bake in here
+# ahead of time.
+databases:
+  - name: vonbook-db
+    databaseName: vonbook
+    user: vonbook
+    plan: free
+
+services:
+  - type: web
+    name: vonbook-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vonbook-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        sync: false
+      - key: FOUNDER_CLAIM_CODE
+        sync: false
+      - key: MAX_UPLOAD_MB
+        value: 50
