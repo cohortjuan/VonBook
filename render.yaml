@@ -18,18 +18,21 @@ services:
     name: vonbook-backend
     runtime: node
     rootDir: backend
-    # note: a Disk requires a paid instance type -- "free" can't have one.
-    # if this blueprint is ever used to recreate the service from scratch
-    # on a paid plan, bump this and the disk block below will actually
-    # attach; on free, remove the disk block (avatars/post photos just
-    # won't survive a redeploy -- see README's Known limitations).
-    plan: starter
+    plan: free
     buildCommand: npm install
     startCommand: npm start
-    disk:
-      name: uploads
-      mountPath: /var/data/uploads
-      sizeGB: 1
+    # No disk here on purpose -- Disks require a paid instance type, and
+    # this account is on free. That means avatars/post photos/videos do
+    # NOT survive a redeploy (the filesystem resets) -- see the README's
+    # Known limitations. If a paid plan is ever added later: backend
+    # service -> Disks tab -> Add Disk (mount path /var/data/uploads) ->
+    # add env var UPLOAD_DIR_PATH=/var/data/uploads (the upload code
+    # already reads this, see backend/src/middleware/upload.js). Adding
+    # `plan: starter` + a `disk:` block here would also work for a fresh
+    # service created from this blueprint on a paid account, but editing
+    # it on an *already-existing free* service risks Render trying to
+    # apply a plan change/billing event through a blueprint sync -- don't
+    # add that back without confirming the account is actually paid first.
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -43,5 +46,3 @@ services:
         sync: false
       - key: MAX_UPLOAD_MB
         value: 50
-      - key: UPLOAD_DIR_PATH
-        value: /var/data/uploads
