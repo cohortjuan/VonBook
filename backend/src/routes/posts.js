@@ -4,6 +4,7 @@ import { getFriendIds, areFriends } from '../lib/friends.js';
 import { isBlockedEitherWay } from '../lib/blocks.js';
 import { createNotification } from '../lib/notify.js';
 import { mediaUpload } from '../middleware/upload.js';
+import { finalizeUpload } from '../lib/cloudinary.js';
 import { normalizeUsername } from '../lib/normalize.js';
 
 export const postsRouter = Router();
@@ -111,9 +112,10 @@ postsRouter.post('/', mediaUpload.array('media', 10), async (req, res, next) => 
 
       for (let i = 0; i < files.length; i++) {
         const mediaType = files[i].mimetype.startsWith('video/') ? 'video' : 'image';
+        const url = await finalizeUpload(files[i].path, `/uploads/${files[i].filename}`);
         await client.query(
           `INSERT INTO post_media (post_id, media_url, media_type, position) VALUES ($1, $2, $3, $4)`,
-          [post.id, `/uploads/${files[i].filename}`, mediaType, i],
+          [post.id, url, mediaType, i],
         );
       }
 

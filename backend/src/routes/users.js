@@ -4,6 +4,7 @@ import { pool } from '../db/pool.js';
 import { normalizeUsername } from '../lib/normalize.js';
 import { isBlockedEitherWay } from '../lib/blocks.js';
 import { photoUpload, isRealImage } from '../middleware/upload.js';
+import { finalizeUpload } from '../lib/cloudinary.js';
 
 export const usersRouter = Router();
 
@@ -131,7 +132,7 @@ function handlePhotoUpload(column) {
           return res.status(400).json({ error: 'that file is not a valid image' });
         }
 
-        const url = `/uploads/${req.file.filename}`;
+        const url = await finalizeUpload(req.file.path, `/uploads/${req.file.filename}`);
         const result = await pool.query(
           `UPDATE users SET ${column} = $2, updated_at = now() WHERE id = $1 RETURNING ${PROFILE_FIELDS}`,
           [req.user.id, url],
