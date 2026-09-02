@@ -236,6 +236,13 @@ CREATE TABLE IF NOT EXISTS messages (
   deleted_at       TIMESTAMPTZ
 );
 
+-- added after the table already existed in production -- ADD COLUMN IF NOT
+-- EXISTS makes this a harmless no-op there too, same as the CREATE TABLE IF
+-- NOT EXISTS statements above (see db/pool.js's ensureSchema, which reruns
+-- this whole file on every boot).
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_type VARCHAR(10) CHECK (media_type IN ('image', 'video'));
+
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
 
 -- ---------------------------------------------------------------------

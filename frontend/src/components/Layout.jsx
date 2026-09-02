@@ -10,6 +10,14 @@ import { useToast } from '../context/ToastContext.jsx';
 import { useKonamiCode } from '../hooks/useKonamiCode.js';
 import { useFounderBirthday } from '../hooks/useFounderBirthday.js';
 import { api } from '../api/client.js';
+import { requestNotificationPermission, vibrate, notifyIfAway } from '../lib/notify.js';
+import { NOTIFICATION_LABEL } from '../lib/notificationText.js';
+
+// only these two are urgent enough to buzz the phone / pop a native
+// notification for -- likes and comments would just be spammy noise on
+// something this size (a birthday present for a few friends, not a feed
+// people are glued to).
+const BUZZ_TYPES = new Set(['message', 'missed_call']);
 
 // used two ways: as a react-router layout route (renders its nested routes
 // via Outlet, the normal case for every authenticated page) and, from
@@ -42,11 +50,25 @@ export default function Layout({ children }) {
     refreshUnread();
   }, [refreshUnread]);
 
+  // ask once per visit -- the browser only actually shows its own prompt
+  // the first time; every call after a decision just resolves instantly
+  // with whatever the user already chose.
+  useEffect(() => {
+    requestNotificationPermission();
+  }, []);
+
   useEffect(() => {
     if (!socket) return;
     const onNotification = (n) => {
       setUnreadNotifications((c) => c + 1);
       if (n.type === 'message') setUnreadMessages((c) => c + 1);
+      if (BUZZ_TYPES.has(n.type)) {
+        vibrate(80);
+        notifyIfAway(n.actor_display_name || 'VonBook', {
+          body: NOTIFICATION_LABEL[n.type]?.(n) || 'You have a new notification',
+          tag: `vonbook-notification-${n.id}`,
+        });
+      }
     };
     socket.on('notification', onNotification);
     return () => socket.off('notification', onNotification);

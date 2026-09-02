@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { normalizeImageFiles } from '../lib/imageProcessing.js';
@@ -7,9 +7,22 @@ export default function CreatePost({ onCreated }) {
   const toast = useToast();
   const [caption, setCaption] = useState('');
   const [files, setFiles] = useState([]);
+  const [previews, setPreviews] = useState([]);
   const [gameTag, setGameTag] = useState('');
   const [showGameTag, setShowGameTag] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // one object URL per picked file, regenerated (and the old ones revoked)
+  // whenever the file list changes
+  useEffect(() => {
+    const urls = files.map((f) => URL.createObjectURL(f));
+    setPreviews(urls);
+    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+  }, [files]);
+
+  function removeFile(index) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -61,6 +74,23 @@ export default function CreatePost({ onCreated }) {
         </button>
       )}
 
+      {files.length > 0 && (
+        <div className="create-post-previews">
+          {files.map((f, i) => (
+            <div key={i} className="create-post-preview-item">
+              {f.type.startsWith('video/') ? (
+                <video src={previews[i]} muted className="create-post-preview-thumb" />
+              ) : (
+                <img src={previews[i]} alt="" className="create-post-preview-thumb" />
+              )}
+              <button type="button" className="create-post-preview-remove" onClick={() => removeFile(i)} aria-label="Remove photo/video">
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="create-post-row">
         <label className="btn-secondary file-picker">
           📷 Photo/Video
@@ -72,7 +102,6 @@ export default function CreatePost({ onCreated }) {
             onChange={(e) => setFiles(Array.from(e.target.files || []))}
           />
         </label>
-        {files.length > 0 && <span className="muted">{files.length} file(s) selected</span>}
         <button className="btn-primary" type="submit" disabled={busy || (!caption.trim() && files.length === 0)}>
           {busy ? 'Posting…' : 'Post'}
         </button>

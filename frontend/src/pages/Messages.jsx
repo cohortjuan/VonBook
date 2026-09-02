@@ -36,7 +36,10 @@ export default function Messages() {
             <Avatar user={{ display_name: c.other_display_name, avatar_url: c.other_avatar_url, is_founder: c.other_is_founder }} size={48} />
             <div className="conversation-row-body">
               <DisplayName user={{ display_name: c.other_display_name, is_founder: c.other_is_founder }} className="conversation-row-name" />
-              <div className="conversation-row-preview">{c.last_message_body || 'Say hi 👋'}</div>
+              <div className="conversation-row-preview">
+                {c.last_message_body ||
+                  (c.last_message_media_type ? (c.last_message_media_type === 'video' ? '🎥 Video' : '📷 Photo') : 'Say hi 👋')}
+              </div>
             </div>
             <span className="muted small">{timeAgo(c.last_message_at)}</span>
           </Link>

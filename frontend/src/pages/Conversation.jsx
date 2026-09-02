@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api } from '../api/client.js';
+import { api, getFileUrl } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useSocket } from '../context/SocketContext.jsx';
 import { useCall } from '../context/CallContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import Avatar from '../components/Avatar.jsx';
 import DisplayName from '../components/DisplayName.jsx';
+import { normalizeImageFile } from '../lib/imageProcessing.js';
 
 export default function Conversation() {
   const { id } = useParams();
@@ -20,6 +21,8 @@ export default function Conversation() {
   const [other, setOther] = useState(null);
   const [draft, setDraft] = useState('');
   const [typing, setTyping] = useState(false);
+  const [attachment, setAttachment] = useState(null);
+  const [attachmentPreview, setAttachmentPreview] = useState(null);
   const bottomRef = useRef(null);
   const typingTimeout = useRef(null);
 
@@ -59,6 +62,18 @@ export default function Conversation() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // object URL for whatever's currently attached, cleaned up whenever it
+  // changes or the attachment is cleared
+  useEffect(() => {
+    if (!attachment) {
+      setAttachmentPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(attachment);
+    setAttachmentPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [attachment]);
+
   function handleDraftChange(e) {
     setDraft(e.target.value);
     socket?.emit('typing', { conversationId, isTyping: true });
@@ -66,13 +81,25 @@ export default function Conversation() {
     typingTimeout.current = setTimeout(() => socket?.emit('typing', { conversationId, isTyping: false }), 1500);
   }
 
+  async function handleFilePicked(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    // same HEIC -> JPEG + orientation fix as post photos, see
+    // lib/imageProcessing.js -- videos pass through untouched
+    const normalized = file.type.startsWith('image/') ? await normalizeImageFile(file) : file;
+    setAttachment(normalized);
+  }
+
   async function send(e) {
     e.preventDefault();
     const body = draft.trim();
-    if (!body) return;
+    if (!body && !attachment) return;
     setDraft('');
+    const file = attachment;
+    setAttachment(null);
     try {
-      await api.messages.send(conversationId, body);
+      await api.messages.send(conversationId, body, file);
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -110,16 +137,39 @@ export default function Conversation() {
         {messages === null && <p className="muted center">Loading…</p>}
         {messages?.map((m) => (
           <div key={m.id} className={`message-bubble ${m.sender_id === user.id ? 'mine' : 'theirs'}`}>
-            {m.body}
+            {m.media_url &&
+              (m.media_type === 'video' ? (
+                <video src={getFileUrl(m.media_url)} controls className="message-media" />
+              ) : (
+                <img src={getFileUrl(m.media_url)} alt="" className="message-media" />
+              ))}
+            {m.body && <div className={m.media_url ? 'message-body-with-media' : undefined}>{m.body}</div>}
           </div>
         ))}
         {typing && <div className="typing-indicator">typing…</div>}
         <div ref={bottomRef} />
       </div>
 
+      {attachment && (
+        <div className="composer-attachment-preview">
+          {attachment.type.startsWith('video/') ? (
+            <video src={attachmentPreview} muted className="composer-attachment-thumb" />
+          ) : (
+            <img src={attachmentPreview} alt="" className="composer-attachment-thumb" />
+          )}
+          <button type="button" className="composer-attachment-remove" onClick={() => setAttachment(null)} aria-label="Remove attachment">
+            ✕
+          </button>
+        </div>
+      )}
+
       <form className="conversation-composer" onSubmit={send}>
+        <label className="btn-secondary composer-attach" aria-label="Attach photo or video">
+          📎
+          <input type="file" accept="image/*,video/*" hidden onChange={handleFilePicked} />
+        </label>
         <input value={draft} onChange={handleDraftChange} placeholder="Message…" maxLength={4000} />
-        <button className="btn-primary" type="submit" disabled={!draft.trim()}>
+        <button className="btn-primary" type="submit" disabled={!draft.trim() && !attachment}>
           Send
         </button>
       </form>

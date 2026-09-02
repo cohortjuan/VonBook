@@ -4,16 +4,7 @@ import { useState } from 'react';
 import { api } from '../api/client.js';
 import Avatar from '../components/Avatar.jsx';
 import DisplayName from '../components/DisplayName.jsx';
-
-const LABEL = {
-  friend_request: (n) => `sent you a friend request`,
-  friend_accept: (n) => `accepted your friend request`,
-  like: (n) => `liked your post`,
-  comment: (n) => `commented on your post`,
-  message: (n) => `sent you a message`,
-  missed_call: (n) => `you missed a call`,
-  platform_ping: (n) => `posted something new on ${n.payload?.platform || 'another app'}${n.payload?.message ? `: "${n.payload.message}"` : ''}`,
-};
+import { NOTIFICATION_LABEL } from '../lib/notificationText.js';
 
 function timeAgo(iso) {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -63,7 +54,7 @@ export default function Notifications() {
           <Avatar user={{ display_name: n.actor_display_name, avatar_url: n.actor_avatar_url, is_founder: n.actor_is_founder }} size={40} />
           <div className="notification-row-body">
             <span>
-              <DisplayName user={{ display_name: n.actor_display_name || 'Someone', is_founder: n.actor_is_founder }} /> {LABEL[n.type]?.(n) || n.type}
+              <DisplayName user={{ display_name: n.actor_display_name || 'Someone', is_founder: n.actor_is_founder }} /> {NOTIFICATION_LABEL[n.type]?.(n) || n.type}
             </span>
             <div className="muted small">{timeAgo(n.created_at)}</div>
           </div>

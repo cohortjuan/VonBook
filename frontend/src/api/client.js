@@ -121,8 +121,15 @@ export const api = {
     openDirect: (userId) => request(`/messages/conversations/direct/${userId}`, { method: 'POST' }),
     history: (conversationId, before) =>
       request(`/messages/conversations/${conversationId}/messages${before ? `?before=${before}` : ''}`),
-    send: (conversationId, bodyText) =>
-      request(`/messages/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ body: bodyText }) }),
+    send: (conversationId, bodyText, file) => {
+      if (file) {
+        const formData = new FormData();
+        if (bodyText) formData.append('body', bodyText);
+        formData.append('media', file);
+        return request(`/messages/conversations/${conversationId}/messages`, { method: 'POST', body: formData });
+      }
+      return request(`/messages/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ body: bodyText }) });
+    },
     markRead: (conversationId) => request(`/messages/conversations/${conversationId}/read`, { method: 'PATCH' }),
   },
   linkedAccounts: {

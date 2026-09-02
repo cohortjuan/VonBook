@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { useSocket } from './SocketContext.jsx';
+import { vibrate, notifyIfAway } from '../lib/notify.js';
 
 const CallContext = createContext(null);
 
@@ -114,7 +115,16 @@ export function CallProvider({ children }) {
       // already on a call -- silently let the caller time out rather than
       // interrupting a live conversation with a modal
       setActiveCall((current) => {
-        if (!current) setIncomingCall(payload);
+        if (!current) {
+          setIncomingCall(payload);
+          // ring even if the tab's focused -- a call is urgent enough that
+          // the in-app modal alone isn't necessarily going to be noticed
+          vibrate([400, 200, 400, 200, 400, 200, 400]);
+          notifyIfAway(`Incoming ${payload.callType} call`, {
+            body: `${payload.from?.display_name || 'Someone'} is calling…`,
+            tag: 'vonbook-call',
+          });
+        }
         return current;
       });
     });
