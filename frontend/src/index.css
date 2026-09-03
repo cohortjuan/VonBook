@@ -320,6 +320,10 @@ video {
   border-radius: var(--radius);
   padding: 2rem 1.5rem;
 }
+.auth-logo {
+  display: block;
+  margin: 0 auto 1rem;
+}
 .brand-wordmark {
   text-align: center;
   font-family: 'Press Start 2P', 'Courier New', monospace;
@@ -831,6 +835,37 @@ video {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
+}
+.mention-suggestions {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+.mention-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: none;
+  border: none;
+  padding: 0.5rem 0.7rem;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.mention-suggestion:hover {
+  background: var(--surface);
+}
+.mention-suggestion-name {
+  font-weight: 600;
+}
+.mention-suggestion-handle {
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 .comment-form {
   display: flex;

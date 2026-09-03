@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import AlienLogo from '../components/AlienLogo.jsx';
 
 export default function Login() {
   const { login } = useAuth();
@@ -28,6 +29,7 @@ export default function Login() {
   return (
     <div className="auth-screen">
       <div className="auth-card">
+        <AlienLogo size={100} className="auth-logo" />
         <h1 className="brand-wordmark">VonBook</h1>
         <p className="auth-tagline">Friends. Feed. Chat. Calls. One place.</p>
         <form onSubmit={handleSubmit} className="auth-form">

@@ -12,6 +12,28 @@ const POWER_OFF_MS = 650;
 // to media time, not the media's own reported position
 const PLAYBACK_RATE = 1.1;
 
+const MUTE_PREF_KEY = 'vonbook_intro_muted';
+
+function loadMutePref() {
+  try {
+    // no saved preference yet (first-ever visit) -> default to sound ON,
+    // not muted. only a previously-saved "true" (they muted it
+    // themselves) starts muted.
+    return localStorage.getItem(MUTE_PREF_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function saveMutePref(muted) {
+  try {
+    localStorage.setItem(MUTE_PREF_KEY, String(muted));
+  } catch {
+    // ignore -- private browsing / storage disabled just means the
+    // choice doesn't persist to next visit, not worth surfacing an error
+  }
+}
+
 // plays once, in front of the real Landing page underneath (still mounted
 // the whole time -- this is purely an overlay). in the last few seconds of
 // the video the logo/wordmark/tagline fade in over it; when the video ends,
@@ -21,7 +43,15 @@ export default function IntroSplash({ onFinished }) {
   const videoRef = useRef(null);
   const [overlayVisible, setOverlayVisible] = useState(false);
   const [poweringOff, setPoweringOff] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(loadMutePref);
+
+  function toggleMuted() {
+    setMuted((m) => {
+      const next = !m;
+      saveMutePref(next);
+      return next;
+    });
+  }
 
   function finish() {
     setPoweringOff(true);
@@ -32,6 +62,24 @@ export default function IntroSplash({ onFinished }) {
     const video = videoRef.current;
     if (!video) return;
     video.playbackRate = PLAYBACK_RATE;
+
+    // no declarative autoPlay attribute on the <video> -- this drives
+    // playback directly so the unmuted-first attempt below has a real
+    // promise to catch. browsers block autoplay *with sound* unless the
+    // visitor already has "media engagement" with the site; muted
+    // autoplay is essentially always allowed. try for real sound first
+    // (the actual default we want) and fall back to muted only if the
+    // browser actually refuses, rather than assuming it will.
+    const playAttempt = video.play();
+    if (playAttempt?.catch) {
+      playAttempt.catch(() => {
+        if (!video.muted) {
+          video.muted = true;
+          setMuted(true);
+          video.play().catch(() => {});
+        }
+      });
+    }
 
     function handleTimeUpdate() {
       if (video.duration && video.duration - video.currentTime <= OVERLAY_LEAD_SECONDS) {
@@ -57,7 +105,6 @@ export default function IntroSplash({ onFinished }) {
         ref={videoRef}
         className="intro-splash-video"
         src="/intro-video.mp4"
-        autoPlay
         muted={muted}
         playsInline
         // if the file's missing or fails to decode, don't strand a visitor
@@ -66,12 +113,12 @@ export default function IntroSplash({ onFinished }) {
       />
 
       <div className={`intro-splash-overlay ${overlayVisible ? 'visible' : ''}`}>
-        <AlienLogo size={64} color="#ffffff" />
+        <AlienLogo size={112} />
         <h1 className="intro-splash-title">VonBook</h1>
         <p className="intro-splash-tagline">the gamers lounge</p>
       </div>
 
-      <button className="intro-splash-mute" onClick={() => setMuted((m) => !m)} aria-label={muted ? 'Unmute' : 'Mute'}>
+      <button className="intro-splash-mute" onClick={toggleMuted} aria-label={muted ? 'Unmute' : 'Mute'}>
         {muted ? '🔇' : '🔊'}
       </button>
       <button className="intro-splash-skip" onClick={finish}>

@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { normalizeImageFiles } from '../lib/imageProcessing.js';
 import { publicWarningDismissed } from '../lib/publicPostWarning.js';
+import { useMentionAutocomplete } from '../hooks/useMentionAutocomplete.js';
 import PublicPostWarning from './PublicPostWarning.jsx';
+import MentionSuggestions from './MentionSuggestions.jsx';
 
 export default function CreatePost({ onCreated }) {
   const toast = useToast();
+  const captionRef = useRef(null);
   const [caption, setCaption] = useState('');
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
@@ -17,6 +20,7 @@ export default function CreatePost({ onCreated }) {
   const [isPublic, setIsPublic] = useState(false);
   const [showPublicWarning, setShowPublicWarning] = useState(false);
   const [busy, setBusy] = useState(false);
+  const mention = useMentionAutocomplete(captionRef, setCaption);
 
   // one object URL per picked file, regenerated (and the old ones revoked)
   // whenever the file list changes
@@ -73,12 +77,20 @@ export default function CreatePost({ onCreated }) {
   return (
     <form className="create-post" onSubmit={handleSubmit}>
       <textarea
+        ref={captionRef}
         placeholder="What's going on? (tag someone with @username)"
         value={caption}
-        onChange={(e) => setCaption(e.target.value)}
+        onChange={(e) => {
+          setCaption(e.target.value);
+          mention.checkToken();
+        }}
+        onKeyUp={mention.checkToken}
+        onClick={mention.checkToken}
+        onBlur={mention.dismiss}
         rows={2}
         maxLength={2000}
       />
+      <MentionSuggestions suggestions={mention.suggestions} onSelect={mention.selectSuggestion} />
 
       {showGameTag ? (
         <input

@@ -17,7 +17,7 @@ const ROWS = PATTERN.length;
 // used both as the clickable brand mark in TopBar/auth screens (three taps
 // on it is the space invaders easter egg, see TopBar.jsx) and, exported
 // statically as public/icon.svg, as the favicon/PWA icon.
-export default function AlienLogo({ size = 28, color = 'var(--primary)' }) {
+export default function AlienLogo({ size = 28, color = 'var(--primary)', className = '' }) {
   const cells = [];
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
@@ -34,6 +34,7 @@ export default function AlienLogo({ size = 28, color = 'var(--primary)' }) {
       height={(size * ROWS) / COLS}
       shapeRendering="crispEdges"
       aria-hidden="true"
+      className={className}
     >
       {cells}
     </svg>

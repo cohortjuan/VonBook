@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
+import AlienLogo from '../components/AlienLogo.jsx';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -37,7 +38,8 @@ export default function ResetPassword() {
     return (
       <div className="auth-screen">
         <div className="auth-card">
-          <h1 className="brand-wordmark">VonBook</h1>
+          <AlienLogo size={100} className="auth-logo" />
+        <h1 className="brand-wordmark">VonBook</h1>
           <p className="auth-tagline">That reset link is missing its token.</p>
           <p className="auth-switch">
             <Link to="/forgot-password">Request a new one</Link>
@@ -50,6 +52,7 @@ export default function ResetPassword() {
   return (
     <div className="auth-screen">
       <div className="auth-card">
+        <AlienLogo size={100} className="auth-logo" />
         <h1 className="brand-wordmark">VonBook</h1>
         <p className="auth-tagline">Choose a new password.</p>
         <form onSubmit={handleSubmit} className="auth-form">

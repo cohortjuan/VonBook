@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
+import AlienLogo from '../components/AlienLogo.jsx';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -27,6 +28,7 @@ export default function ForgotPassword() {
   return (
     <div className="auth-screen">
       <div className="auth-card">
+        <AlienLogo size={100} className="auth-logo" />
         <h1 className="brand-wordmark">VonBook</h1>
         {sent ? (
           <>

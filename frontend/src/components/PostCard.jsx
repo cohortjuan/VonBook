@@ -10,6 +10,8 @@ import PublicPostWarning from './PublicPostWarning.jsx';
 import { publicWarningDismissed } from '../lib/publicPostWarning.js';
 import { timeAgo, fullDateTime } from '../lib/timeAgo.js';
 import { linkifyText } from '../lib/linkify.jsx';
+import { useMentionAutocomplete } from '../hooks/useMentionAutocomplete.js';
+import MentionSuggestions from './MentionSuggestions.jsx';
 
 function linkDomain(url) {
   try {
@@ -37,6 +39,7 @@ export default function PostCard({ post, onRemoved }) {
   const [hiddenAt, setHiddenAt] = useState(post.hidden_at);
   const [commentCount, setCommentCount] = useState(post.comment_count);
   const mediaScrollRef = useRef(null);
+  const mention = useMentionAutocomplete(commentInputRef, setCommentText);
 
   async function handleReport() {
     if (reported) return;
@@ -301,12 +304,19 @@ export default function PostCard({ post, onRemoved }) {
               </button>
             </div>
           )}
+          <MentionSuggestions suggestions={mention.suggestions} onSelect={mention.selectSuggestion} />
           <form onSubmit={submitComment} className="comment-form">
             <input
               ref={commentInputRef}
               value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              placeholder="Write a comment…"
+              onChange={(e) => {
+                setCommentText(e.target.value);
+                mention.checkToken();
+              }}
+              onKeyUp={mention.checkToken}
+              onClick={mention.checkToken}
+              onBlur={mention.dismiss}
+              placeholder="Write a comment… (@username to tag)"
               maxLength={500}
             />
             <button type="submit" disabled={!commentText.trim()}>
