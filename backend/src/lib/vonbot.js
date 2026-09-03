@@ -35,7 +35,7 @@ async function getOrCreateVonBot() {
       VONBOT_USERNAME,
       passwordHash,
       'VonBot',
-      "🤖 keeping the feed juiced with gaming, anime, and movie news. I'm a bot, not Von!",
+      "🤖 I'm a bot, not Von! A few times a day I repost one trending pic from gaming, anime, movie, or superhero news to keep this feed a little more alive. See something that shouldn't be here? Hit 🚩 report on it.",
     ],
   );
   return { id: result.rows[0].id, justCreated: true };

@@ -172,4 +172,8 @@ export const api = {
   calls: {
     history: () => request('/calls'),
   },
+  admin: {
+    setVonBotAvatar: (formData) => request('/admin/vonbot/avatar', { method: 'POST', body: formData }),
+    setVonBotCover: (formData) => request('/admin/vonbot/cover', { method: 'POST', body: formData }),
+  },
 };

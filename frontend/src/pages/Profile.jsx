@@ -7,7 +7,9 @@ import { useToast } from '../context/ToastContext.jsx';
 import Avatar from '../components/Avatar.jsx';
 import DisplayName from '../components/DisplayName.jsx';
 import Confetti from '../components/Confetti.jsx';
+import ImageCropper from '../components/ImageCropper.jsx';
 import { isTodayBirthday } from '../lib/birthday.js';
+import { normalizeImageFile } from '../lib/imageProcessing.js';
 
 const PLATFORM_LABEL = {
   psn: 'PlayStation',
@@ -33,8 +35,13 @@ export default function Profile() {
   const [posts, setPosts] = useState(null);
   const [linked, setLinked] = useState([]);
   const [busy, setBusy] = useState(false);
+  // holds { kind: 'avatar'|'cover', file } while the crop modal is open,
+  // same pattern as Settings.jsx's own photo upload -- only ever used for
+  // VonBot's photos here, see canEditVonBotPhotos below
+  const [cropTarget, setCropTarget] = useState(null);
 
   const isSelf = profile?.relationship === 'self';
+  const canEditVonBotPhotos = me.is_dev && profile?.username === 'vonbot';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,6 +102,28 @@ export default function Profile() {
     }
   }
 
+  async function handleVonBotPhotoPicked(kind, file) {
+    if (!file) return;
+    // same HEIC -> JPEG + orientation fix as Settings.jsx's own upload,
+    // done before the cropper since its preview is a plain <img>
+    const normalized = await normalizeImageFile(file);
+    setCropTarget({ kind, file: normalized });
+  }
+
+  async function handleVonBotCropped(croppedFile) {
+    const kind = cropTarget.kind;
+    setCropTarget(null);
+    const formData = new FormData();
+    formData.append('photo', croppedFile);
+    try {
+      await (kind === 'avatar' ? api.admin.setVonBotAvatar(formData) : api.admin.setVonBotCover(formData));
+      await load();
+      toast(`VonBot's ${kind === 'avatar' ? 'avatar' : 'cover photo'} updated`, 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
   async function copyHandle(handle, label) {
     try {
       await navigator.clipboard.writeText(handle);
@@ -112,10 +141,34 @@ export default function Profile() {
 
       <div className="profile-cover">
         {profile.cover_url && <img src={getFileUrl(profile.cover_url)} alt="" />}
+        {canEditVonBotPhotos && (
+          <label className="profile-photo-edit profile-cover-edit">
+            📷 Change cover
+            <input type="file" accept="image/*" hidden onChange={(e) => handleVonBotPhotoPicked('cover', e.target.files[0])} />
+          </label>
+        )}
       </div>
 
+      {cropTarget && (
+        <ImageCropper
+          file={cropTarget.file}
+          aspect={cropTarget.kind === 'avatar' ? 1 : 3}
+          shape={cropTarget.kind === 'avatar' ? 'circle' : 'rect'}
+          onCancel={() => setCropTarget(null)}
+          onCropped={handleVonBotCropped}
+        />
+      )}
+
       <div className="profile-header">
-        <Avatar user={profile} size={96} />
+        <div className="profile-avatar-wrap">
+          <Avatar user={profile} size={96} />
+          {canEditVonBotPhotos && (
+            <label className="profile-photo-edit profile-avatar-edit" aria-label="Change VonBot's avatar">
+              📷
+              <input type="file" accept="image/*" hidden onChange={(e) => handleVonBotPhotoPicked('avatar', e.target.files[0])} />
+            </label>
+          )}
+        </div>
         <DisplayName user={profile} className="profile-name" />
         {profile.founder_title && <p className="founder-title">{profile.founder_title}</p>}
         <p className="profile-handle">@{profile.username}</p>
