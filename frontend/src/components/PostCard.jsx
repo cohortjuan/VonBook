@@ -33,7 +33,37 @@ export default function PostCard({ post, onRemoved }) {
   const [mediaIndex, setMediaIndex] = useState(0);
   const [isPublic, setIsPublic] = useState(post.is_public);
   const [showPublicWarning, setShowPublicWarning] = useState(false);
+  const [reported, setReported] = useState(false);
+  const [hiddenAt, setHiddenAt] = useState(post.hidden_at);
   const mediaScrollRef = useRef(null);
+
+  async function handleReport() {
+    if (reported) return;
+    setReported(true);
+    try {
+      await api.posts.report(post.id);
+      toast('Post reported and hidden for review', 'success');
+      // reported posts are hidden from everyone (see hidden_at) -- this
+      // reporter included, so drop it out of the local feed rather than
+      // leaving a post up that a reload wouldn't show anymore
+      onRemoved?.(post.id);
+    } catch (err) {
+      setReported(false);
+      toast(err.message, 'error');
+    }
+  }
+
+  async function handleRelease() {
+    const prev = hiddenAt;
+    setHiddenAt(null);
+    try {
+      await api.posts.release(post.id);
+      toast('Post released -- visible to everyone again', 'success');
+    } catch (err) {
+      setHiddenAt(prev);
+      toast(err.message, 'error');
+    }
+  }
 
   async function setVisibility(nextPublic) {
     const prev = isPublic;
@@ -132,12 +162,25 @@ export default function PostCard({ post, onRemoved }) {
 
   return (
     <article className="post-card">
+      {hiddenAt && (
+        <div className="post-hidden-banner">
+          <span>🚩 Reported -- hidden from everyone else</span>
+          <button className="btn-secondary btn-small" onClick={handleRelease}>
+            Release
+          </button>
+        </div>
+      )}
       <div className="post-header">
         <Link to={`/u/${post.author_username}`} className="post-author-link">
           <Avatar user={{ display_name: post.author_display_name, avatar_url: post.author_avatar_url, is_founder: post.author_is_founder }} size={40} />
           <div>
             <DisplayName
-              user={{ display_name: post.author_display_name, is_founder: post.author_is_founder, founder_title: post.author_founder_title }}
+              user={{
+                display_name: post.author_display_name,
+                is_founder: post.author_is_founder,
+                founder_title: post.author_founder_title,
+                username: post.author_username,
+              }}
               className="post-author-name"
             />
             <div className="post-time">{timeAgo(post.created_at)}</div>
@@ -178,6 +221,7 @@ export default function PostCard({ post, onRemoved }) {
             ))}
           </div>
           {showHeart && <span className="like-heart-burst">❤️</span>}
+          {media.length > 1 && <span className="post-media-count">{mediaIndex + 1}/{media.length}</span>}
           {media.length > 1 && (
             <div className="post-media-thumbs">
               {media.map((m, i) => (
@@ -203,6 +247,11 @@ export default function PostCard({ post, onRemoved }) {
           💬 {post.comment_count > 0 && post.comment_count}
         </button>
         <ShareMenu post={post} />
+        {post.author_id !== user.id && (
+          <button className="post-action post-report" onClick={handleReport} disabled={reported} aria-label="Report post">
+            🚩
+          </button>
+        )}
       </div>
 
       {showComments && (
@@ -214,7 +263,10 @@ export default function PostCard({ post, onRemoved }) {
               <div key={c.id} className="comment-row">
                 <Avatar user={{ display_name: c.author_display_name, avatar_url: c.author_avatar_url, is_founder: c.author_is_founder }} size={28} />
                 <div>
-                  <DisplayName user={{ display_name: c.author_display_name, is_founder: c.author_is_founder }} className="comment-author" />
+                  <DisplayName
+                    user={{ display_name: c.author_display_name, is_founder: c.author_is_founder, username: c.author_username }}
+                    className="comment-author"
+                  />
                   <span className="comment-body">{c.body}</span>
                 </div>
               </div>

@@ -13,11 +13,13 @@ import { api } from '../api/client.js';
 import { requestNotificationPermission, vibrate, notifyIfAway } from '../lib/notify.js';
 import { NOTIFICATION_LABEL } from '../lib/notificationText.js';
 
-// only these two are urgent enough to buzz the phone / pop a native
+// only these are urgent enough to buzz the phone / pop a native
 // notification for -- likes and comments would just be spammy noise on
 // something this size (a birthday present for a few friends, not a feed
-// people are glued to).
-const BUZZ_TYPES = new Set(['message', 'missed_call']);
+// people are glued to). 'report' only ever reaches a dev account (see
+// is_dev on users, routes/posts.js) -- it's the one type where "notify me
+// right away" is the actual point.
+const BUZZ_TYPES = new Set(['message', 'missed_call', 'report']);
 
 // used two ways: as a react-router layout route (renders its nested routes
 // via Outlet, the normal case for every authenticated page) and, from

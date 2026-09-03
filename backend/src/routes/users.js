@@ -96,6 +96,22 @@ usersRouter.get('/:username', async (req, res, next) => {
   }
 });
 
+// GET /api/users/:username/email -- dev only. a separate, on-demand
+// endpoint rather than baking email into PROFILE_FIELDS/AUTHOR_COLUMNS,
+// so an email address never leaves the server for a non-dev viewer under
+// any circumstance -- see the hover tooltip in components/DisplayName.jsx.
+usersRouter.get('/:username/email', async (req, res, next) => {
+  try {
+    if (!req.user.is_dev) return res.status(403).json({ error: 'not allowed' });
+    const username = normalizeUsername(req.params.username);
+    const result = await pool.query('SELECT email FROM users WHERE username = $1 AND deleted_at IS NULL', [username]);
+    if (!result.rows[0]) return res.status(404).json({ error: 'user not found' });
+    res.json({ email: result.rows[0].email });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/users/me { display_name?, bio?, birthday?, now_playing? }
 // for bio/now_playing, sending an empty string clears the field -- only an
 // actually-omitted (undefined -> null here) field leaves it unchanged

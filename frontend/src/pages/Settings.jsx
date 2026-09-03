@@ -5,7 +5,17 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import Avatar from '../components/Avatar.jsx';
 import ImageCropper from '../components/ImageCropper.jsx';
+import PublicPostWarning from '../components/PublicPostWarning.jsx';
 import { normalizeImageFile } from '../lib/imageProcessing.js';
+import { requestNotificationPermission } from '../lib/notify.js';
+import { publicWarningDismissed } from '../lib/publicPostWarning.js';
+
+const NOTIF_STATUS_LABEL = {
+  granted: '✅ Enabled -- you\'ll get a vibration + notification for calls and messages when the app isn\'t the active tab.',
+  denied: "🔕 Blocked -- you'll need to allow notifications for this site in your browser's settings to turn it back on.",
+  default: "Not turned on yet.",
+  unsupported: "Not supported in this browser.",
+};
 
 const GAMER_PLATFORMS = ['psn', 'xbox', 'pc'];
 const SOCIAL_PLATFORMS = ['facebook', 'instagram', 'tiktok', 'snapchat', 'other'];
@@ -39,6 +49,10 @@ export default function Settings() {
   // the raw picked file is never uploaded directly, only what the cropper
   // exports on confirm (see handleCropped below)
   const [cropTarget, setCropTarget] = useState(null);
+  const [notifStatus, setNotifStatus] = useState(() =>
+    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported',
+  );
+  const [showBulkPublicWarning, setShowBulkPublicWarning] = useState(false);
 
   useEffect(() => {
     api.linkedAccounts.mine().then((rows) => {
@@ -132,6 +146,27 @@ export default function Settings() {
     navigate('/login');
   }
 
+  async function handleEnableNotifications() {
+    setNotifStatus(await requestNotificationPermission());
+  }
+
+  async function applyAllPostsVisibility(isPublic) {
+    try {
+      const res = await api.posts.setAllVisibility(isPublic);
+      toast(`${res.updated} post${res.updated === 1 ? '' : 's'} updated`, 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
+  function handleMakeAllPublic() {
+    if (!publicWarningDismissed()) {
+      setShowBulkPublicWarning(true);
+      return;
+    }
+    applyAllPostsVisibility(true);
+  }
+
   return (
     <div className="page settings-page">
       <h2>Edit Profile</h2>
@@ -186,6 +221,27 @@ export default function Settings() {
         </button>
       </form>
 
+      <h2>Notifications</h2>
+      <p className="muted">{NOTIF_STATUS_LABEL[notifStatus] || NOTIF_STATUS_LABEL.unsupported}</p>
+      {notifStatus === 'default' && (
+        <button className="btn-secondary" onClick={handleEnableNotifications}>
+          Enable notifications
+        </button>
+      )}
+
+      <h2>Post Privacy</h2>
+      <p className="muted">
+        Bulk-update every post you've already made. New posts still default to friends-only regardless of what you pick here.
+      </p>
+      <div className="settings-bulk-visibility">
+        <button className="btn-secondary" onClick={handleMakeAllPublic}>
+          🌐 Make all posts public
+        </button>
+        <button className="btn-secondary" onClick={() => applyAllPostsVisibility(false)}>
+          🔒 Make all posts friends-only
+        </button>
+      </div>
+
       <h2>Gamer Tags</h2>
       <p className="muted">Link your PSN, Xbox, and PC tags so friends can find and add you on other platforms.</p>
       {GAMER_PLATFORMS.map((platform) => (
@@ -237,6 +293,16 @@ export default function Settings() {
       <button className="btn-secondary logout-btn" onClick={handleLogout}>
         Log out
       </button>
+
+      {showBulkPublicWarning && (
+        <PublicPostWarning
+          onCancel={() => setShowBulkPublicWarning(false)}
+          onConfirm={() => {
+            setShowBulkPublicWarning(false);
+            applyAllPostsVisibility(true);
+          }}
+        />
+      )}
     </div>
   );
 }

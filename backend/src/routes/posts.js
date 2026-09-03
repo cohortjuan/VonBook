@@ -51,10 +51,11 @@ postsRouter.get('/feed', async (req, res, next) => {
     const before = Number(req.query.before) || null;
 
     const result = await pool.query(
-      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.created_at, ${AUTHOR_COLUMNS}
+      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.hidden_at, p.created_at, ${AUTHOR_COLUMNS}
        FROM posts p JOIN users u ON u.id = p.author_id
        WHERE (p.author_id = ANY($1) OR p.is_public = true) AND p.deleted_at IS NULL
          AND ($2::int IS NULL OR p.id < $2)
+         AND (p.hidden_at IS NULL OR $4 = true)
          AND NOT EXISTS (
            SELECT 1 FROM blocks b
            WHERE (b.blocker_id = $3 AND b.blocked_id = p.author_id)
@@ -62,7 +63,7 @@ postsRouter.get('/feed', async (req, res, next) => {
          )
        ORDER BY p.id DESC
        LIMIT 20`,
-      [authorIds, before, req.user.id],
+      [authorIds, before, req.user.id, req.user.is_dev],
     );
 
     res.json(await attachMediaAndCounts(result.rows, req.user.id));
@@ -87,11 +88,12 @@ postsRouter.get('/user/:username', async (req, res, next) => {
     }
 
     const result = await pool.query(
-      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.created_at, ${AUTHOR_COLUMNS}
+      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.hidden_at, p.created_at, ${AUTHOR_COLUMNS}
        FROM posts p JOIN users u ON u.id = p.author_id
        WHERE p.author_id = $1 AND p.deleted_at IS NULL AND ($2::boolean IS FALSE OR p.is_public = true)
+         AND (p.hidden_at IS NULL OR $3 = true)
        ORDER BY p.id DESC LIMIT 60`,
-      [author.id, publicOnly],
+      [author.id, publicOnly, req.user.is_dev],
     );
     res.json(await attachMediaAndCounts(result.rows, req.user.id));
   } catch (err) {
@@ -146,6 +148,22 @@ postsRouter.post('/', mediaUpload.array('media', 10), async (req, res, next) => 
   }
 });
 
+// PATCH /api/posts/me/visibility { is_public } -- bulk version of the
+// per-post toggle below, flips every one of the caller's own posts at
+// once. a two-segment path so it can't collide with /:postId.
+postsRouter.patch('/me/visibility', async (req, res, next) => {
+  try {
+    const isPublic = req.body.is_public === true || req.body.is_public === 'true';
+    const result = await pool.query(
+      `UPDATE posts SET is_public = $1 WHERE author_id = $2 AND deleted_at IS NULL RETURNING id`,
+      [isPublic, req.user.id],
+    );
+    res.json({ updated: result.rowCount, is_public: isPublic });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/posts/:postId { is_public } -- author only, flips a post
 // between friends-only (default) and visible in everyone's public feed
 postsRouter.patch('/:postId', async (req, res, next) => {
@@ -184,6 +202,67 @@ async function loadPostAuthor(postId) {
   const result = await pool.query('SELECT author_id FROM posts WHERE id = $1 AND deleted_at IS NULL', [postId]);
   return result.rows[0]?.author_id ?? null;
 }
+
+// POST /api/posts/:postId/report -- hides the post from everyone (see
+// hidden_at) and notifies every dev account (see is_dev on users). one row
+// per (post, reporter) in post_reports means a repeat tap from the same
+// person is a silent no-op, not a duplicate notification or a re-hide.
+postsRouter.post('/:postId/report', async (req, res, next) => {
+  try {
+    const postId = Number(req.params.postId);
+    const authorResult = await pool.query(
+      `SELECT p.author_id, u.username AS author_username
+       FROM posts p JOIN users u ON u.id = p.author_id
+       WHERE p.id = $1 AND p.deleted_at IS NULL`,
+      [postId],
+    );
+    const author = authorResult.rows[0];
+    if (!author) return res.status(404).json({ error: 'post not found' });
+
+    const inserted = await pool.query(
+      'INSERT INTO post_reports (post_id, reporter_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id',
+      [postId, req.user.id],
+    );
+    if (inserted.rows.length === 0) return res.status(204).end();
+
+    // COALESCE so a second report on an already-hidden post doesn't reset
+    // the original hidden_at timestamp
+    await pool.query('UPDATE posts SET hidden_at = COALESCE(hidden_at, now()) WHERE id = $1', [postId]);
+
+    const devs = await pool.query('SELECT id FROM users WHERE is_dev = true AND deleted_at IS NULL');
+    const io = req.app.get('io');
+    for (const { id: devId } of devs.rows) {
+      await createNotification({
+        io,
+        recipientId: devId,
+        actorId: req.user.id,
+        type: 'report',
+        payload: { postId, authorUsername: author.author_username },
+      });
+    }
+
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/posts/:postId/release -- dev only, un-hides a reported post
+// (see hidden_at). the other half of "hidden until a dev decides" is just
+// the existing DELETE, which devs can already call on anyone's post.
+postsRouter.post('/:postId/release', async (req, res, next) => {
+  try {
+    if (!req.user.is_dev) return res.status(403).json({ error: 'not allowed' });
+    const result = await pool.query(
+      'UPDATE posts SET hidden_at = NULL WHERE id = $1 AND deleted_at IS NULL RETURNING id',
+      [req.params.postId],
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'post not found' });
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
 
 // POST /api/posts/:postId/like
 postsRouter.post('/:postId/like', async (req, res, next) => {

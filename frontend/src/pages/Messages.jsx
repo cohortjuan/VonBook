@@ -35,7 +35,10 @@ export default function Messages() {
           <Link key={c.id} to={`/messages/${c.id}`} className={`conversation-row ${unread ? 'unread' : ''}`}>
             <Avatar user={{ display_name: c.other_display_name, avatar_url: c.other_avatar_url, is_founder: c.other_is_founder }} size={48} />
             <div className="conversation-row-body">
-              <DisplayName user={{ display_name: c.other_display_name, is_founder: c.other_is_founder }} className="conversation-row-name" />
+              <DisplayName
+                user={{ display_name: c.other_display_name, is_founder: c.other_is_founder, username: c.other_username }}
+                className="conversation-row-name"
+              />
               <div className="conversation-row-preview">
                 {c.last_message_body ||
                   (c.last_message_media_type ? (c.last_message_media_type === 'video' ? '🎥 Video' : '📷 Photo') : 'Say hi 👋')}

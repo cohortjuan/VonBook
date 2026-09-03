@@ -163,6 +163,12 @@ CREATE TABLE IF NOT EXISTS posts (
 -- opts it into the public feed (see routes/posts.js).
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false;
 
+-- set the moment a post gets its first report, cleared by a dev "release"
+-- (see routes/posts.js) -- a hidden post is invisible to everyone,
+-- including its own author, until a dev either releases or deletes it.
+-- null = visible, same nullable-timestamp-as-flag pattern as deleted_at.
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ;
+
 -- rss item ids/links VonBot has already reposted (see lib/vonbot.js), so a
 -- tick that sees the same feed item twice skips it instead of
 -- double-posting.
@@ -202,6 +208,16 @@ CREATE TABLE IF NOT EXISTS post_comments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_post_comments_post_id ON post_comments(post_id, created_at);
+
+-- one row per (post, reporter) so repeat taps on the report button don't
+-- spam every dev account with duplicate notifications -- see routes/posts.js
+CREATE TABLE IF NOT EXISTS post_reports (
+  id          SERIAL PRIMARY KEY,
+  post_id     INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (post_id, reporter_id)
+);
 
 -- ---------------------------------------------------------------------
 -- linked_accounts: other platforms a user has told VonBook about (a

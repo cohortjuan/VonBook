@@ -510,6 +510,16 @@ video {
   margin-bottom: 1rem;
   overflow: hidden;
 }
+.post-hidden-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.9rem;
+  background: rgba(220, 38, 38, 0.15);
+  border-bottom: 1px solid rgba(220, 38, 38, 0.4);
+  font-size: 0.82rem;
+}
 .post-header {
   display: flex;
   align-items: center;
@@ -621,6 +631,16 @@ video {
     opacity: 0;
   }
 }
+.post-media-count {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
 .post-media-thumbs {
   display: flex;
   gap: 6px;
@@ -666,6 +686,14 @@ video {
 }
 .post-action.liked {
   color: var(--accent);
+}
+.post-report {
+  margin-left: auto;
+  opacity: 0.6;
+}
+.post-report:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 .share-menu {
   position: relative;
@@ -901,6 +929,12 @@ video {
   display: block;
   width: 100%;
   margin-top: 2rem;
+}
+.settings-bulk-visibility {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
 }
 
 /* ---------- friends ---------- */
