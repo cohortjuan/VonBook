@@ -9,6 +9,7 @@ import ShareMenu from './ShareMenu.jsx';
 import PublicPostWarning from './PublicPostWarning.jsx';
 import { publicWarningDismissed } from '../lib/publicPostWarning.js';
 import { timeAgo, fullDateTime } from '../lib/timeAgo.js';
+import { linkifyText } from '../lib/linkify.jsx';
 
 function linkDomain(url) {
   try {
@@ -215,7 +216,7 @@ export default function PostCard({ post, onRemoved }) {
       </div>
 
       {post.game_tag && <span className="game-tag-badge">🏆 {post.game_tag}</span>}
-      {post.caption && <p className="post-caption">{post.caption}</p>}
+      {post.caption && <p className="post-caption">{linkifyText(post.caption)}</p>}
 
       {media.length > 0 && (
         <div className="post-media">

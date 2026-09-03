@@ -580,7 +580,11 @@ video {
   padding: 0 0.9rem 0.6rem;
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
   font-size: 0.92rem;
+}
+.post-caption a {
+  color: var(--primary);
 }
 .post-media {
   position: relative;
