@@ -69,10 +69,12 @@ messagesRouter.get('/conversations/:id/messages', async (req, res, next) => {
 
     const before = Number(req.query.before) || null;
     const result = await pool.query(
-      `SELECT id, sender_id, body, media_url, media_type, created_at
-       FROM messages
-       WHERE conversation_id = $1 AND deleted_at IS NULL AND ($2::int IS NULL OR id < $2)
-       ORDER BY id DESC LIMIT 30`,
+      `SELECT m.id, m.sender_id, m.body, m.media_url, m.media_type, m.reply_to_id, m.created_at,
+              r.body AS reply_to_body, r.sender_id AS reply_to_sender_id, r.media_type AS reply_to_media_type
+       FROM messages m
+       LEFT JOIN messages r ON r.id = m.reply_to_id
+       WHERE m.conversation_id = $1 AND m.deleted_at IS NULL AND ($2::int IS NULL OR m.id < $2)
+       ORDER BY m.id DESC LIMIT 30`,
       [conversationId, before],
     );
     res.json(result.rows.reverse());
@@ -81,9 +83,9 @@ messagesRouter.get('/conversations/:id/messages', async (req, res, next) => {
   }
 });
 
-// POST /api/messages/conversations/:id/messages { body } and/or one file
-// under field "media" (photo or short video clip, same upload pipeline as
-// post media -- see middleware/upload.js)
+// POST /api/messages/conversations/:id/messages { body, reply_to_id? }
+// and/or one file under field "media" (photo or short video clip, same
+// upload pipeline as post media -- see middleware/upload.js)
 messagesRouter.post('/conversations/:id/messages', mediaUpload.single('media'), async (req, res, next) => {
   try {
     const conversationId = Number(req.params.id);
@@ -115,6 +117,20 @@ messagesRouter.post('/conversations/:id/messages', mediaUpload.single('media'), 
       }
     }
 
+    let replyToId = Number(req.body.reply_to_id) || null;
+    let replyPreview = null;
+    if (replyToId) {
+      const replyToResult = await pool.query(
+        'SELECT id, sender_id, body, media_type FROM messages WHERE id = $1 AND conversation_id = $2 AND deleted_at IS NULL',
+        [replyToId, conversationId],
+      );
+      if (!replyToResult.rows[0]) {
+        if (file) fs.unlink(file.path, () => {});
+        return res.status(404).json({ error: 'message not found' });
+      }
+      replyPreview = replyToResult.rows[0];
+    }
+
     let mediaUrl = null;
     let mediaType = null;
     if (file) {
@@ -123,11 +139,18 @@ messagesRouter.post('/conversations/:id/messages', mediaUpload.single('media'), 
     }
 
     const result = await pool.query(
-      `INSERT INTO messages (conversation_id, sender_id, body, media_url, media_type) VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, conversation_id, sender_id, body, media_url, media_type, created_at`,
-      [conversationId, req.user.id, body || null, mediaUrl, mediaType],
+      `INSERT INTO messages (conversation_id, sender_id, body, media_url, media_type, reply_to_id) VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, conversation_id, sender_id, body, media_url, media_type, reply_to_id, created_at`,
+      [conversationId, req.user.id, body || null, mediaUrl, mediaType, replyToId],
     );
-    const message = result.rows[0];
+    // reply preview fields carried over from the lookup above rather than
+    // re-queried -- same data, one less round trip
+    const message = {
+      ...result.rows[0],
+      reply_to_body: replyPreview?.body ?? null,
+      reply_to_sender_id: replyPreview?.sender_id ?? null,
+      reply_to_media_type: replyPreview?.media_type ?? null,
+    };
 
     const io = req.app.get('io');
     if (io) io.to(`conversation:${conversationId}`).emit('message:new', message);

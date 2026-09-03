@@ -305,11 +305,13 @@ postsRouter.delete('/:postId/like', async (req, res, next) => {
   }
 });
 
-// GET /api/posts/:postId/comments
+// GET /api/posts/:postId/comments -- flat list, parent_id null for a
+// top-level comment. frontend groups replies under their parent (single
+// level only, see parent_id's comment in database/schema.sql).
 postsRouter.get('/:postId/comments', async (req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT c.id, c.body, c.created_at, u.id AS author_id, u.username AS author_username,
+      `SELECT c.id, c.body, c.parent_id, c.created_at, u.id AS author_id, u.username AS author_username,
               u.display_name AS author_display_name, u.avatar_url AS author_avatar_url, u.is_founder AS author_is_founder,
               u.is_dev AS author_is_dev
        FROM post_comments c JOIN users u ON u.id = c.author_id
@@ -323,7 +325,7 @@ postsRouter.get('/:postId/comments', async (req, res, next) => {
   }
 });
 
-// POST /api/posts/:postId/comments { body }
+// POST /api/posts/:postId/comments { body, parent_id? }
 postsRouter.post('/:postId/comments', async (req, res, next) => {
   try {
     const postId = Number(req.params.postId);
@@ -334,13 +336,31 @@ postsRouter.post('/:postId/comments', async (req, res, next) => {
     if (!authorId) return res.status(404).json({ error: 'post not found' });
     if (await isBlockedEitherWay(req.user.id, authorId)) return res.status(403).json({ error: 'not available' });
 
+    // replying to a reply collapses onto its top-level parent instead --
+    // keeps threading to a single level, same as most apps that do this
+    let parentId = Number(req.body.parent_id) || null;
+    let parentAuthorId = null;
+    if (parentId) {
+      const parent = await pool.query('SELECT id, parent_id, author_id FROM post_comments WHERE id = $1 AND post_id = $2', [
+        parentId,
+        postId,
+      ]);
+      if (!parent.rows[0]) return res.status(404).json({ error: 'comment not found' });
+      parentId = parent.rows[0].parent_id || parent.rows[0].id;
+      parentAuthorId = parent.rows[0].author_id;
+    }
+
     const result = await pool.query(
-      `INSERT INTO post_comments (post_id, author_id, body) VALUES ($1, $2, $3)
-       RETURNING id, body, created_at`,
-      [postId, req.user.id, body],
+      `INSERT INTO post_comments (post_id, author_id, body, parent_id) VALUES ($1, $2, $3, $4)
+       RETURNING id, body, parent_id, created_at`,
+      [postId, req.user.id, body, parentId],
     );
 
-    await createNotification({ io: req.app.get('io'), recipientId: authorId, actorId: req.user.id, type: 'comment', payload: { postId } });
+    const io = req.app.get('io');
+    await createNotification({ io, recipientId: authorId, actorId: req.user.id, type: 'comment', payload: { postId } });
+    if (parentAuthorId && parentAuthorId !== authorId) {
+      await createNotification({ io, recipientId: parentAuthorId, actorId: req.user.id, type: 'comment', payload: { postId } });
+    }
 
     res.status(201).json({
       ...result.rows[0],

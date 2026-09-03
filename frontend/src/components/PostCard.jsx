@@ -8,18 +8,7 @@ import DisplayName from './DisplayName.jsx';
 import ShareMenu from './ShareMenu.jsx';
 import PublicPostWarning from './PublicPostWarning.jsx';
 import { publicWarningDismissed } from '../lib/publicPostWarning.js';
-
-function timeAgo(iso) {
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  return new Date(iso).toLocaleDateString();
-}
+import { timeAgo, fullDateTime } from '../lib/timeAgo.js';
 
 function linkDomain(url) {
   try {
@@ -38,11 +27,14 @@ export default function PostCard({ post, onRemoved }) {
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState(null);
   const [commentText, setCommentText] = useState('');
+  const [replyingTo, setReplyingTo] = useState(null); // { id, displayName } | null
+  const commentInputRef = useRef(null);
   const [mediaIndex, setMediaIndex] = useState(0);
   const [isPublic, setIsPublic] = useState(post.is_public);
   const [showPublicWarning, setShowPublicWarning] = useState(false);
   const [reported, setReported] = useState(false);
   const [hiddenAt, setHiddenAt] = useState(post.hidden_at);
+  const [commentCount, setCommentCount] = useState(post.comment_count);
   const mediaScrollRef = useRef(null);
 
   async function handleReport() {
@@ -143,14 +135,22 @@ export default function PostCard({ post, onRemoved }) {
     }
   }
 
+  function startReply(comment) {
+    setReplyingTo({ id: comment.parent_id || comment.id, displayName: comment.author_display_name });
+    commentInputRef.current?.focus();
+  }
+
   async function submitComment(e) {
     e.preventDefault();
     const body = commentText.trim();
     if (!body) return;
     setCommentText('');
+    const parentId = replyingTo?.id;
+    setReplyingTo(null);
     try {
-      const created = await api.posts.addComment(post.id, body);
+      const created = await api.posts.addComment(post.id, body, parentId);
       setComments((prev) => [...(prev || []), created]);
+      setCommentCount((c) => c + 1);
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -191,7 +191,9 @@ export default function PostCard({ post, onRemoved }) {
               }}
               className="post-author-name"
             />
-            <div className="post-time">{timeAgo(post.created_at)}</div>
+            <div className="post-time" title={fullDateTime(post.created_at)}>
+              {timeAgo(post.created_at, { fallbackAfterDays: 7 })}
+            </div>
           </div>
         </Link>
         {(post.author_id === user.id || user.is_dev) && (
@@ -262,7 +264,7 @@ export default function PostCard({ post, onRemoved }) {
           {liked ? '❤️' : '🤍'} {likeCount > 0 && likeCount}
         </button>
         <button className="post-action" onClick={loadComments}>
-          💬 {post.comment_count > 0 && post.comment_count}
+          💬 {commentCount > 0 && commentCount}
         </button>
         <ShareMenu post={post} />
         {post.author_id !== user.id && (
@@ -277,21 +279,30 @@ export default function PostCard({ post, onRemoved }) {
           {comments === null ? (
             <p className="muted">Loading…</p>
           ) : (
-            comments.map((c) => (
-              <div key={c.id} className="comment-row">
-                <Avatar user={{ display_name: c.author_display_name, avatar_url: c.author_avatar_url, is_founder: c.author_is_founder }} size={28} />
-                <div>
-                  <DisplayName
-                    user={{ display_name: c.author_display_name, is_founder: c.author_is_founder, username: c.author_username }}
-                    className="comment-author"
-                  />
-                  <span className="comment-body">{c.body}</span>
+            comments
+              .filter((c) => !c.parent_id)
+              .map((c) => (
+                <div key={c.id}>
+                  <CommentRow comment={c} onReply={startReply} />
+                  {comments
+                    .filter((r) => r.parent_id === c.id)
+                    .map((r) => (
+                      <CommentRow key={r.id} comment={r} onReply={startReply} isReply />
+                    ))}
                 </div>
-              </div>
-            ))
+              ))
+          )}
+          {replyingTo && (
+            <div className="comment-replying-to">
+              Replying to <strong>{replyingTo.displayName}</strong>
+              <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply">
+                ✕
+              </button>
+            </div>
           )}
           <form onSubmit={submitComment} className="comment-form">
             <input
+              ref={commentInputRef}
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
               placeholder="Write a comment…"
@@ -314,5 +325,29 @@ export default function PostCard({ post, onRemoved }) {
         />
       )}
     </article>
+  );
+}
+
+function CommentRow({ comment, onReply, isReply = false }) {
+  return (
+    <div className={`comment-row ${isReply ? 'comment-reply' : ''}`}>
+      <Avatar
+        user={{ display_name: comment.author_display_name, avatar_url: comment.author_avatar_url, is_founder: comment.author_is_founder }}
+        size={isReply ? 22 : 28}
+      />
+      <div>
+        <DisplayName
+          user={{ display_name: comment.author_display_name, is_founder: comment.author_is_founder, username: comment.author_username }}
+          className="comment-author"
+        />
+        <span className="comment-body">{comment.body}</span>
+        <div className="comment-meta">
+          <span title={fullDateTime(comment.created_at)}>{timeAgo(comment.created_at)}</span>
+          <button type="button" className="comment-reply-btn" onClick={() => onReply(comment)}>
+            Reply
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

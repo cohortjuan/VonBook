@@ -19,7 +19,6 @@ const NOTIF_STATUS_LABEL = {
 
 const GAMER_PLATFORMS = ['psn', 'xbox', 'pc'];
 const SOCIAL_PLATFORMS = ['facebook', 'instagram', 'tiktok', 'snapchat', 'other'];
-const PLATFORMS = [...GAMER_PLATFORMS, ...SOCIAL_PLATFORMS];
 const PLATFORM_LABEL = {
   psn: 'PlayStation',
   xbox: 'Xbox',

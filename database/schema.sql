@@ -218,6 +218,10 @@ CREATE TABLE IF NOT EXISTS post_comments (
 
 CREATE INDEX IF NOT EXISTS idx_post_comments_post_id ON post_comments(post_id, created_at);
 
+-- single-level threading only (a reply can't itself be replied to) -- see
+-- routes/posts.js and the comment rendering in PostCard.jsx
+ALTER TABLE post_comments ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES post_comments(id) ON DELETE CASCADE;
+
 -- one row per (post, reporter) so repeat taps on the report button don't
 -- spam every dev account with duplicate notifications -- see routes/posts.js
 CREATE TABLE IF NOT EXISTS post_reports (
@@ -281,6 +285,11 @@ CREATE TABLE IF NOT EXISTS messages (
 -- this whole file on every boot).
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_type VARCHAR(10) CHECK (media_type IN ('image', 'video'));
+
+-- ON DELETE SET NULL, not CASCADE: there's no message-delete feature, but
+-- if one's ever added, a reply should just lose its quote rather than
+-- disappear along with whatever it was replying to.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id INTEGER REFERENCES messages(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
 

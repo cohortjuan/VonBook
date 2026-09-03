@@ -131,8 +131,8 @@ export const api = {
     like: (postId) => request(`/posts/${postId}/like`, { method: 'POST' }),
     unlike: (postId) => request(`/posts/${postId}/like`, { method: 'DELETE' }),
     comments: (postId) => request(`/posts/${postId}/comments`),
-    addComment: (postId, bodyText) =>
-      request(`/posts/${postId}/comments`, { method: 'POST', body: JSON.stringify({ body: bodyText }) }),
+    addComment: (postId, bodyText, parentId) =>
+      request(`/posts/${postId}/comments`, { method: 'POST', body: JSON.stringify({ body: bodyText, parent_id: parentId || null }) }),
     removeComment: (commentId) => request(`/posts/comments/${commentId}`, { method: 'DELETE' }),
   },
   messages: {
@@ -140,14 +140,18 @@ export const api = {
     openDirect: (userId) => request(`/messages/conversations/direct/${userId}`, { method: 'POST' }),
     history: (conversationId, before) =>
       request(`/messages/conversations/${conversationId}/messages${before ? `?before=${before}` : ''}`),
-    send: (conversationId, bodyText, file) => {
+    send: (conversationId, bodyText, file, replyToId) => {
       if (file) {
         const formData = new FormData();
         if (bodyText) formData.append('body', bodyText);
         formData.append('media', file);
+        if (replyToId) formData.append('reply_to_id', String(replyToId));
         return request(`/messages/conversations/${conversationId}/messages`, { method: 'POST', body: formData });
       }
-      return request(`/messages/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ body: bodyText }) });
+      return request(`/messages/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ body: bodyText, reply_to_id: replyToId || null }),
+      });
     },
     markRead: (conversationId) => request(`/messages/conversations/${conversationId}/read`, { method: 'PATCH' }),
   },

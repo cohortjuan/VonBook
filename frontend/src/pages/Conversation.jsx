@@ -23,8 +23,10 @@ export default function Conversation() {
   const [typing, setTyping] = useState(false);
   const [attachment, setAttachment] = useState(null);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
+  const [replyingTo, setReplyingTo] = useState(null); // a message object | null
   const bottomRef = useRef(null);
   const typingTimeout = useRef(null);
+  const draftInputRef = useRef(null);
 
   useEffect(() => {
     setMessages(null);
@@ -91,15 +93,22 @@ export default function Conversation() {
     setAttachment(normalized);
   }
 
+  function startReply(message) {
+    setReplyingTo(message);
+    draftInputRef.current?.focus();
+  }
+
   async function send(e) {
     e.preventDefault();
     const body = draft.trim();
     if (!body && !attachment) return;
     setDraft('');
     const file = attachment;
+    const replyToId = replyingTo?.id;
     setAttachment(null);
+    setReplyingTo(null);
     try {
-      await api.messages.send(conversationId, body, file);
+      await api.messages.send(conversationId, body, file, replyToId);
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -136,14 +145,27 @@ export default function Conversation() {
       <div className="conversation-messages">
         {messages === null && <p className="muted center">Loading…</p>}
         {messages?.map((m) => (
-          <div key={m.id} className={`message-bubble ${m.sender_id === user.id ? 'mine' : 'theirs'}`}>
-            {m.media_url &&
-              (m.media_type === 'video' ? (
-                <video src={getFileUrl(m.media_url)} controls className="message-media" />
-              ) : (
-                <img src={getFileUrl(m.media_url)} alt="" className="message-media" />
-              ))}
-            {m.body && <div className={m.media_url ? 'message-body-with-media' : undefined}>{m.body}</div>}
+          <div key={m.id} className={`message-bubble-row ${m.sender_id === user.id ? 'mine' : 'theirs'}`}>
+            <div className={`message-bubble ${m.sender_id === user.id ? 'mine' : 'theirs'}`}>
+              {m.reply_to_id && (
+                <div className="message-reply-quote">
+                  <span className="message-reply-quote-sender">
+                    {m.reply_to_sender_id === user.id ? 'You' : otherUser?.display_name || 'them'}
+                  </span>
+                  {m.reply_to_body || (m.reply_to_media_type === 'video' ? '🎥 Video' : m.reply_to_media_type === 'image' ? '📷 Photo' : '')}
+                </div>
+              )}
+              {m.media_url &&
+                (m.media_type === 'video' ? (
+                  <video src={getFileUrl(m.media_url)} controls className="message-media" />
+                ) : (
+                  <img src={getFileUrl(m.media_url)} alt="" className="message-media" />
+                ))}
+              {m.body && <div className={m.media_url ? 'message-body-with-media' : undefined}>{m.body}</div>}
+            </div>
+            <button type="button" className="message-reply-btn" onClick={() => startReply(m)} aria-label="Reply">
+              ↩️
+            </button>
           </div>
         ))}
         {typing && <div className="typing-indicator">typing…</div>}
@@ -163,12 +185,24 @@ export default function Conversation() {
         </div>
       )}
 
+      {replyingTo && (
+        <div className="composer-replying-to">
+          <span className="composer-replying-to-text">
+            Replying to <strong>{replyingTo.sender_id === user.id ? 'yourself' : otherUser?.display_name || 'them'}</strong>:{' '}
+            {replyingTo.body || (replyingTo.media_type === 'video' ? '🎥 Video' : replyingTo.media_type === 'image' ? '📷 Photo' : '')}
+          </span>
+          <button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply">
+            ✕
+          </button>
+        </div>
+      )}
+
       <form className="conversation-composer" onSubmit={send}>
         <label className="btn-secondary composer-attach" aria-label="Attach photo or video">
           📎
           <input type="file" accept="image/*,video/*" hidden onChange={handleFilePicked} />
         </label>
-        <input value={draft} onChange={handleDraftChange} placeholder="Message…" maxLength={4000} />
+        <input ref={draftInputRef} value={draft} onChange={handleDraftChange} placeholder="Message…" maxLength={4000} />
         <button className="btn-primary" type="submit" disabled={!draft.trim() && !attachment}>
           Send
         </button>

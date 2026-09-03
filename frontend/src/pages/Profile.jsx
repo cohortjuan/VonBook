@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import Avatar from '../components/Avatar.jsx';
 import DisplayName from '../components/DisplayName.jsx';
 import Confetti from '../components/Confetti.jsx';
+import { isTodayBirthday } from '../lib/birthday.js';
 
 const PLATFORM_LABEL = {
   psn: 'PlayStation',
@@ -19,13 +20,6 @@ const PLATFORM_LABEL = {
   other: 'Other',
 };
 const PLATFORM_ICON = { psn: '🎮', xbox: '🎮', pc: '🖥️', facebook: '📘', instagram: '📸', tiktok: '🎵', snapchat: '👻', other: '🔗' };
-
-function isTodayBirthday(birthdayStr) {
-  if (!birthdayStr) return false;
-  const b = new Date(birthdayStr);
-  const today = new Date();
-  return b.getUTCMonth() === today.getMonth() && b.getUTCDate() === today.getDate();
-}
 
 export default function Profile() {
   const { username } = useParams();

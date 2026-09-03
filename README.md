@@ -73,7 +73,7 @@ Whoever signs up with the `FOUNDER_CLAIM_CODE` gets:
 - An automatic site-wide "🎉 Happy Birthday!" banner + confetti, shown to *every* logged-in user, on the day that matches their `birthday` field (checked by month/day, so it recurs every year)
 - Confetti on their own profile page on that day too
 
-Give him the code, have him sign up with his real birthday set, and the rest is automatic.
+Give him the code, have him sign up with his real birthday set, and the rest is automatic. The banner is driven entirely by the `birthday` field on his account (month/day only, compared against each viewer's own local "today") — there's no code-level bug behind it, but it's easy to fat-finger the wrong day in the date picker at signup, so if the banner ever shows on the wrong day, check Settings → Edit Profile → Birthday first before assuming anything's broken.
 
 ## The intro
 
@@ -95,13 +95,14 @@ Don't spoil these for him.
 - **Gamer tags**: PSN, Xbox, and PC handles as linked-account badges, same mechanism as the social platforms below
 - **Achievement posts**: tag a post with a game (🏆 badge) and attach a screenshot, same feed as everything else
 - **Friends**: search by name/username, or import from phone contacts via the browser's native Contact Picker (Chrome on Android; falls back to search everywhere else since that API isn't available on desktop/iOS browsers) — nothing from a contact list is ever stored, it's a one-shot match against existing accounts (see `backend/src/routes/contacts.js`)
-- **Feed**: Instagram-style posts with photos/videos, captions, likes, comments — photos are converted to JPEG client-side before upload (fixes iPhone HEIC photos not rendering in non-Safari browsers, and sideways photos from EXIF orientation, see `frontend/src/lib/imageProcessing.js`). Picking a photo/video anywhere in the app (a post, a message) shows a real thumbnail preview before it's sent, not just a filename. A post with multiple photos/videos is a native swipeable carousel with a tap-to-jump thumbnail filmstrip underneath (see `frontend/src/components/PostCard.jsx`)
+- **Feed**: Instagram-style posts with photos/videos, captions, likes, comments — photos are converted to JPEG client-side before upload (fixes iPhone HEIC photos not rendering in non-Safari browsers, and sideways photos from EXIF orientation, see `frontend/src/lib/imageProcessing.js`). Picking a photo/video anywhere in the app (a post, a message) shows a real thumbnail preview before it's sent, not just a filename. A post with multiple photos/videos is a native swipeable carousel with a "1/3"-style counter and a tap-to-jump thumbnail filmstrip underneath (see `frontend/src/components/PostCard.jsx`). Every relative timestamp ("2h", "3d") is also a hover tooltip with the full date and time (see `frontend/src/lib/timeAgo.js`)
+- **Comment replies**: single-level threading — replying to a reply just collapses onto the original top-level comment instead of nesting further, same as most apps that do this (see `parent_id` in `database/schema.sql` and the comment routes in `backend/src/routes/posts.js`)
 - **Link posts**: a post can carry a link instead of (or alongside) photos/videos/caption. The backend does a one-time, best-effort Open Graph scrape at post time (title + `og:image`, see `backend/src/lib/linkPreview.js`) with basic SSRF guards (blocks private/loopback/link-local addresses; not bulletproof against a redirect repointing mid-fetch, but this app's user base is friends and family, not the public internet). No image found (or the fetch fails/times out) just falls back to the VonBook logo — the post never fails because of a bad link
 - **Reporting**: anyone (except the post's own author) can report a post; the first report immediately hides it from everyone, including its author, and notifies every dev account (see `is_dev` on users). A dev can then release it back to visible or delete it outright — see `hidden_at` / `post_reports` in `database/schema.sql` and the moderation routes in `backend/src/routes/posts.js`
 - **Public posts**: a post is friends-only by default; a toggle on the composer (and on any of your own existing posts) opts it into everyone's feed instead — with a one-time warning dialog ("don't show this again" persists in `localStorage`) so going public is never an accident. The feed is friends' posts + your own + whatever anyone's made public (see `is_public` in `database/schema.sql` and `backend/src/routes/posts.js`). Settings also has a bulk "make all/none of my posts public" action using the same warning
 - **Settings**: also where notifications actually get turned on now (a visible status + "Enable notifications" button, rather than only the silent permission prompt on first app load)
 - **VonBot**: an automated account that reposts one trending gaming/anime/movie/superhero-news image a day (pulled from a handful of public RSS feeds — IGN, MyAnimeList, SlashFilm, ScreenRant) as a public post, so the feed stays active on its own between real posts — see `backend/src/lib/vonbot.js` and the "VonBot" step under Deploying below for how it's actually triggered
-- **Messenger**: real-time 1:1 chat with typing indicators and online/offline presence, and now a photo/video attachment per message (same upload pipeline as posts)
+- **Messenger**: real-time 1:1 chat with typing indicators and online/offline presence, a photo/video attachment per message (same upload pipeline as posts), and a reply-to-message quote (tap ↩️ on any message, see `reply_to_id` in `database/schema.sql`)
 - **Calls**: real audio/video calls over WebRTC, signaled through the same Socket.IO connection (see `backend/src/sockets/index.js` and `frontend/src/context/CallContext.jsx`)
 - **Notifications**: an incoming call, video call, or new message vibrates the phone and — if the app isn't the focused tab — pops a native OS notification, routed through the installed PWA's own service worker so it actually shows up on iOS too (see `frontend/src/lib/notify.js`)
 - **Block / unfriend**: blocking removes any friendship and stops messaging, feed visibility, and profile access in both directions from then on (see `backend/src/lib/blocks.js`); unfriending just ends the friendship, no re-adding needed to reconnect
@@ -132,7 +133,7 @@ VonBook/
       routes/        one file per resource (auth, users, friends, posts, messages, vonbot, ...)
       sockets/       chat + webrtc signaling + presence
       middleware/     auth, csrf, uploads, error handling
-      lib/            small shared helpers (blocks, friends, notify, sessions, cloudinary, reddit, vonbot, ...)
+      lib/            small shared helpers (blocks, friends, notify, sessions, cloudinary, rssFeeds, vonbot, linkPreview, ...)
   frontend/         React + Vite, mobile-first CSS, installable PWA
     src/
       pages/          one per screen

@@ -790,6 +790,40 @@ video {
   font-weight: 600;
   margin-right: 0.4rem;
 }
+.comment-reply {
+  margin-left: 1.8rem;
+  margin-top: 0.5rem;
+}
+.comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.comment-reply-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.comment-replying-to {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.comment-replying-to button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
 .comment-form {
   display: flex;
   gap: 0.5rem;
@@ -1099,23 +1133,80 @@ video {
   flex-direction: column;
   gap: 0.4rem;
 }
+.message-bubble-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.3rem;
+  max-width: 85%;
+}
+.message-bubble-row.mine {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.message-bubble-row.theirs {
+  align-self: flex-start;
+}
 .message-bubble {
-  max-width: 75%;
   padding: 0.55rem 0.85rem;
   border-radius: 16px;
   font-size: 0.9rem;
   line-height: 1.3;
+  min-width: 0;
 }
 .message-bubble.mine {
-  align-self: flex-end;
   background: linear-gradient(135deg, var(--primary), var(--accent));
   color: white;
   border-bottom-right-radius: 4px;
 }
 .message-bubble.theirs {
-  align-self: flex-start;
   background: var(--surface-2);
   border-bottom-left-radius: 4px;
+}
+.message-reply-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.2rem;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+.message-reply-quote {
+  font-size: 0.78rem;
+  opacity: 0.75;
+  border-left: 2px solid currentColor;
+  padding-left: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+.message-reply-quote-sender {
+  font-weight: 600;
+  margin-right: 0.3rem;
+}
+.composer-replying-to {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+.composer-replying-to-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.composer-replying-to strong {
+  color: var(--text);
+}
+.composer-replying-to button {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
 }
 .message-media {
   display: block;

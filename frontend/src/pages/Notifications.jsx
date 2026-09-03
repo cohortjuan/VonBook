@@ -5,16 +5,7 @@ import { api } from '../api/client.js';
 import Avatar from '../components/Avatar.jsx';
 import DisplayName from '../components/DisplayName.jsx';
 import { NOTIFICATION_LABEL } from '../lib/notificationText.js';
-
-function timeAgo(iso) {
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
+import { timeAgo } from '../lib/timeAgo.js';
 
 function targetFor(n) {
   if (n.type === 'friend_request' || n.type === 'friend_accept') return '/friends';
@@ -62,7 +53,7 @@ export default function Notifications() {
               />{' '}
               {NOTIFICATION_LABEL[n.type]?.(n) || n.type}
             </span>
-            <div className="muted small">{timeAgo(n.created_at)}</div>
+            <div className="muted small">{timeAgo(n.created_at, { suffix: ' ago' })}</div>
           </div>
         </button>
       ))}
