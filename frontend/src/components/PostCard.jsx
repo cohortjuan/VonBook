@@ -21,6 +21,14 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
+function linkDomain(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
 export default function PostCard({ post, onRemoved }) {
   const { user } = useAuth();
   const toast = useToast();
@@ -237,6 +245,16 @@ export default function PostCard({ post, onRemoved }) {
             </div>
           )}
         </div>
+      )}
+
+      {post.link_url && (
+        <a href={post.link_url} target="_blank" rel="noreferrer" className="post-link-card">
+          <img src={post.link_image_url || '/icon.svg'} alt="" className="post-link-image" />
+          <div className="post-link-info">
+            <div className="post-link-title">{post.link_title || post.link_url}</div>
+            <div className="post-link-domain">{linkDomain(post.link_url)}</div>
+          </div>
+        </a>
       )}
 
       <div className="post-actions">

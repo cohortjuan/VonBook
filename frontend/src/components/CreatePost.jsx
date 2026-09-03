@@ -12,6 +12,8 @@ export default function CreatePost({ onCreated }) {
   const [previews, setPreviews] = useState([]);
   const [gameTag, setGameTag] = useState('');
   const [showGameTag, setShowGameTag] = useState(false);
+  const [linkUrl, setLinkUrl] = useState('');
+  const [showLink, setShowLink] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [showPublicWarning, setShowPublicWarning] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -39,7 +41,7 @@ export default function CreatePost({ onCreated }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!caption.trim() && files.length === 0) return;
+    if (!caption.trim() && files.length === 0 && !linkUrl.trim()) return;
     setBusy(true);
     try {
       // converts iPhone HEIC photos (and anything else) to plain JPEGs so
@@ -48,6 +50,7 @@ export default function CreatePost({ onCreated }) {
       const formData = new FormData();
       formData.append('caption', caption.trim());
       if (gameTag.trim()) formData.append('game_tag', gameTag.trim());
+      if (linkUrl.trim()) formData.append('link_url', linkUrl.trim());
       formData.append('is_public', String(isPublic));
       normalized.forEach((f) => formData.append('media', f));
       const post = await api.posts.create(formData);
@@ -56,6 +59,8 @@ export default function CreatePost({ onCreated }) {
       setFiles([]);
       setGameTag('');
       setShowGameTag(false);
+      setLinkUrl('');
+      setShowLink(false);
       setIsPublic(false);
       e.target.reset();
     } catch (err) {
@@ -86,6 +91,20 @@ export default function CreatePost({ onCreated }) {
       ) : (
         <button type="button" className="btn-link" onClick={() => setShowGameTag(true)}>
           🏆 Tag an achievement / game
+        </button>
+      )}
+
+      {showLink ? (
+        <input
+          type="url"
+          className="game-tag-input"
+          placeholder="https://…"
+          value={linkUrl}
+          onChange={(e) => setLinkUrl(e.target.value)}
+        />
+      ) : (
+        <button type="button" className="btn-link" onClick={() => setShowLink(true)}>
+          🔗 Add a link
         </button>
       )}
 
@@ -122,7 +141,7 @@ export default function CreatePost({ onCreated }) {
             onChange={(e) => setFiles(Array.from(e.target.files || []))}
           />
         </label>
-        <button className="btn-primary" type="submit" disabled={busy || (!caption.trim() && files.length === 0)}>
+        <button className="btn-primary" type="submit" disabled={busy || (!caption.trim() && files.length === 0 && !linkUrl.trim())}>
           {busy ? 'Posting…' : 'Post'}
         </button>
       </div>

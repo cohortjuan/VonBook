@@ -6,6 +6,7 @@ import { createNotification } from '../lib/notify.js';
 import { mediaUpload } from '../middleware/upload.js';
 import { finalizeUpload } from '../lib/cloudinary.js';
 import { normalizeUsername } from '../lib/normalize.js';
+import { fetchLinkPreview } from '../lib/linkPreview.js';
 
 export const postsRouter = Router();
 
@@ -51,7 +52,7 @@ postsRouter.get('/feed', async (req, res, next) => {
     const before = Number(req.query.before) || null;
 
     const result = await pool.query(
-      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.hidden_at, p.created_at, ${AUTHOR_COLUMNS}
+      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.hidden_at, p.link_url, p.link_title, p.link_image_url, p.created_at, ${AUTHOR_COLUMNS}
        FROM posts p JOIN users u ON u.id = p.author_id
        WHERE (p.author_id = ANY($1) OR p.is_public = true) AND p.deleted_at IS NULL
          AND ($2::int IS NULL OR p.id < $2)
@@ -88,7 +89,7 @@ postsRouter.get('/user/:username', async (req, res, next) => {
     }
 
     const result = await pool.query(
-      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.hidden_at, p.created_at, ${AUTHOR_COLUMNS}
+      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.hidden_at, p.link_url, p.link_title, p.link_image_url, p.created_at, ${AUTHOR_COLUMNS}
        FROM posts p JOIN users u ON u.id = p.author_id
        WHERE p.author_id = $1 AND p.deleted_at IS NULL AND ($2::boolean IS FALSE OR p.is_public = true)
          AND (p.hidden_at IS NULL OR $3 = true)
@@ -101,23 +102,38 @@ postsRouter.get('/user/:username', async (req, res, next) => {
   }
 });
 
-// POST /api/posts { caption, game_tag?, is_public? } + up to 10 files under field "media"
+// POST /api/posts { caption, game_tag?, is_public?, link_url? } + up to 10 files under field "media"
 postsRouter.post('/', mediaUpload.array('media', 10), async (req, res, next) => {
   try {
     const caption = typeof req.body.caption === 'string' ? req.body.caption.trim() : '';
     const gameTag = typeof req.body.game_tag === 'string' ? req.body.game_tag.trim().slice(0, 100) : '';
     const isPublic = req.body.is_public === 'true' || req.body.is_public === true;
     const files = req.files || [];
-    if (!caption && files.length === 0) {
-      return res.status(400).json({ error: 'a post needs a caption or at least one photo/video' });
+
+    let linkUrl = null;
+    if (typeof req.body.link_url === 'string' && req.body.link_url.trim()) {
+      try {
+        linkUrl = new URL(req.body.link_url.trim()).href;
+      } catch {
+        return res.status(400).json({ error: 'that link doesn\'t look like a valid url' });
+      }
     }
+
+    if (!caption && files.length === 0 && !linkUrl) {
+      return res.status(400).json({ error: 'a post needs a caption, a link, or at least one photo/video' });
+    }
+
+    // best-effort, never fails the post -- see lib/linkPreview.js
+    const preview = linkUrl ? await fetchLinkPreview(linkUrl) : null;
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       const postResult = await client.query(
-        `INSERT INTO posts (author_id, caption, game_tag, is_public) VALUES ($1, $2, $3, $4) RETURNING id, caption, game_tag, is_public, created_at`,
-        [req.user.id, caption || null, gameTag || null, isPublic],
+        `INSERT INTO posts (author_id, caption, game_tag, is_public, link_url, link_title, link_image_url)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, caption, game_tag, is_public, link_url, link_title, link_image_url, created_at`,
+        [req.user.id, caption || null, gameTag || null, isPublic, linkUrl, preview?.title || null, preview?.imageUrl || null],
       );
       const post = postResult.rows[0];
 

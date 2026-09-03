@@ -169,6 +169,15 @@ ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT fa
 -- null = visible, same nullable-timestamp-as-flag pattern as deleted_at.
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ;
 
+-- a post can carry a link instead of (or alongside) photos/videos --
+-- link_title/link_image_url are a best-effort Open Graph scrape done once
+-- at post time (see lib/linkPreview.js), never re-fetched afterward. a
+-- link with no discoverable og:image just renders with the vonbook logo
+-- instead (see PostCard.jsx) -- link_image_url stays null in that case.
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS link_url TEXT;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS link_title TEXT;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS link_image_url TEXT;
+
 -- rss item ids/links VonBot has already reposted (see lib/vonbot.js), so a
 -- tick that sees the same feed item twice skips it instead of
 -- double-posting.
