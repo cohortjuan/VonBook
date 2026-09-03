@@ -143,15 +143,17 @@ export default function PostCard({ post, onRemoved }) {
             <div className="post-time">{timeAgo(post.created_at)}</div>
           </div>
         </Link>
-        {post.author_id === user.id && (
+        {(post.author_id === user.id || user.is_dev) && (
           <div className="post-owner-actions">
-            <button
-              className={`post-visibility-toggle ${isPublic ? 'public' : ''}`}
-              onClick={handleVisibilityToggle}
-              aria-label={isPublic ? 'Public -- visible to everyone. Tap to make friends-only' : 'Friends only. Tap to make public'}
-            >
-              {isPublic ? '🌐 Public' : '🔒 Friends'}
-            </button>
+            {post.author_id === user.id && (
+              <button
+                className={`post-visibility-toggle ${isPublic ? 'public' : ''}`}
+                onClick={handleVisibilityToggle}
+                aria-label={isPublic ? 'Public -- visible to everyone. Tap to make friends-only' : 'Friends only. Tap to make public'}
+              >
+                {isPublic ? '🌐 Public' : '🔒 Friends'}
+              </button>
+            )}
             <button className="post-delete" onClick={handleDelete} aria-label="Delete post">
               🗑
             </button>

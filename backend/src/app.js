@@ -15,6 +15,7 @@ import { linkedAccountsRouter } from './routes/linked-accounts.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { callsRouter } from './routes/calls.js';
 import { vonbotRouter } from './routes/vonbot.js';
+import { adminRouter } from './routes/admin.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { requireAuth } from './middleware/requireAuth.js';
 import { csrfProtection } from './middleware/csrf.js';
@@ -78,6 +79,7 @@ app.use('/api/messages', requireAuth, csrfProtection, messagesRouter);
 app.use('/api/linked-accounts', requireAuth, csrfProtection, linkedAccountsRouter);
 app.use('/api/notifications', requireAuth, csrfProtection, notificationsRouter);
 app.use('/api/calls', requireAuth, csrfProtection, callsRouter);
+app.use('/api/admin', requireAuth, csrfProtection, adminRouter);
 
 // no requireAuth/csrfProtection: this is pinged by a scheduled GitHub
 // Actions workflow, not a logged-in browser -- see routes/vonbot.js for

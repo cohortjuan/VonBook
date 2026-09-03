@@ -162,12 +162,16 @@ postsRouter.patch('/:postId', async (req, res, next) => {
   }
 });
 
-// DELETE /api/posts/:postId -- author only, soft delete
+// DELETE /api/posts/:postId -- author, or a dev account, soft delete.
+// dev accounts can remove anyone's post (VonBot's included) -- a moderation
+// backstop now that the feed can carry public posts and rss-sourced
+// content neither of us actually vetted before it posted.
 postsRouter.delete('/:postId', async (req, res, next) => {
   try {
     const result = await pool.query(
-      `UPDATE posts SET deleted_at = now() WHERE id = $1 AND author_id = $2 AND deleted_at IS NULL RETURNING id`,
-      [req.params.postId, req.user.id],
+      `UPDATE posts SET deleted_at = now()
+       WHERE id = $1 AND (author_id = $2 OR $3 = true) AND deleted_at IS NULL RETURNING id`,
+      [req.params.postId, req.user.id, req.user.is_dev],
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'post not found' });
     res.status(204).end();
@@ -257,12 +261,13 @@ postsRouter.post('/:postId/comments', async (req, res, next) => {
   }
 });
 
+// author, or a dev account, same reasoning as the post delete above
 postsRouter.delete('/comments/:commentId', async (req, res, next) => {
   try {
-    const result = await pool.query('DELETE FROM post_comments WHERE id = $1 AND author_id = $2 RETURNING id', [
-      req.params.commentId,
-      req.user.id,
-    ]);
+    const result = await pool.query(
+      'DELETE FROM post_comments WHERE id = $1 AND (author_id = $2 OR $3 = true) RETURNING id',
+      [req.params.commentId, req.user.id, req.user.is_dev],
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'comment not found' });
     res.status(204).end();
   } catch (err) {
