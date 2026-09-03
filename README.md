@@ -34,7 +34,7 @@ Both `npm run dev` commands watch for changes and restart/hot-reload automatical
 
 ## Deploying (Vercel + Render)
 
-Same two services as this folder's Whispers App project, but wired differently: VonBook's frontend talks to the Render backend **directly** (REST *and* the Socket.IO connection for chat/calls), rather than proxying `/api` through Vercel. That's what real-time features need — a WebSocket handshake can't be proxied through a Vercel rewrite the way a plain API call can. The cookie is set to `SameSite=None` in production specifically so it's still sent on that cross-site socket connection (see the comment on `resolveCookieOptions()` in `backend/src/lib/session.js`).
+Same two services as this folder's Whispers App project. REST calls are proxied through Vercel's own domain to the Render backend (`frontend/vercel.json` rewrites `/api/*` and `/uploads/*`), so from the browser's point of view every REST call is same-origin — that's what actually keeps the login cookie working, since modern browsers block a cross-site cookie as "third-party" regardless of any `SameSite` setting. The one connection that's still genuinely cross-site is Socket.IO (chat/calls/presence) — a WebSocket handshake can't be proxied through a Vercel rewrite, so it connects to the Render backend directly and authenticates with a short-lived ticket instead of the cookie (see `backend/src/lib/socketTickets.js`).
 
 1. **Push to GitHub** (once, if not done already):
    ```bash
@@ -49,19 +49,20 @@ Same two services as this folder's Whispers App project, but wired differently: 
    - `FOUNDER_CLAIM_CODE` — same as local
    - `CORS_ORIGIN` — leave a placeholder for now (e.g. `http://localhost:5173`), you'll come back and fix this after step 3
    
-   Once it's deployed, copy the backend's `https://vonbook-backend-xxxx.onrender.com` URL — you need it next.
+   Once it's deployed, copy the backend's `https://vonbook-backend-xxxx.onrender.com` URL — you need it next. **Auto-deploy on this Render account doesn't reliably fire on push** — after any backend change, go to the service → Manual Deploy → Deploy latest commit.
 
-3. **Frontend, on Vercel**: New Project → import the same repo → set **Root Directory to `frontend`** (important, this is not a single-app repo) → add environment variables:
-   - `VITE_API_URL` = `https://<your-render-url>/api`
-   - `VITE_SOCKET_URL` = `https://<your-render-url>`
+3. **Frontend, on Vercel**: New Project → import the same repo → set **Root Directory to `frontend`** (important, this is not a single-app repo) → add one environment variable:
+   - `VITE_SOCKET_URL` = `https://<your-render-url>` (the direct socket connection mentioned above)
    
-   Deploy. Copy the resulting `https://vonbook-xxxx.vercel.app` URL.
+   `VITE_API_URL` doesn't need to be set — the frontend defaults to the relative `/api`, which `vercel.json` already proxies to Render. If `frontend/vercel.json`'s rewrite target isn't this exact project's Render URL, update it there too. Deploy, then copy the resulting `https://vonbook-xxxx.vercel.app` URL.
 
-4. **Back on Render**: edit the `CORS_ORIGIN` env var to your real Vercel URL from step 3, save (this redeploys automatically). Without this the backend rejects every request from the deployed frontend.
+4. **Back on Render**: edit the `CORS_ORIGIN` env var to your real Vercel URL from step 3, save (this redeploys automatically — or use Manual Deploy if it doesn't). Without this the backend rejects the socket connection from the deployed frontend.
 
-5. **Persistent uploads — optional, only relevant on a paid Render plan**: on Render's free tier (the default, and what this project actually runs on), avatars/post photos/videos vanish every time the backend redeploys, because a plain web service's filesystem is ephemeral. There's no free-tier fix for this — it's a real limitation to just know about, not a missing setup step. If a paid instance is ever added later: backend service → **Disks** tab → Add Disk → mount path `/var/data/uploads` → add env var `UPLOAD_DIR_PATH` = `/var/data/uploads` (the upload code already reads this, see `backend/src/middleware/upload.js`).
+5. **Persistent uploads**: on Render's free tier, a plain web service's filesystem is ephemeral — anything written to local disk (avatars, post/message photos and videos) vanishes on every redeploy. The fix actually in use: set `CLOUDINARY_URL` (see `backend/.env.example`) to move uploads to Cloudinary's free tier instead, which survives redeploys. Leaving it unset falls back to local disk, which is fine for local dev but not for a real production deploy. (A paid Render plan's persistent Disk is a different, also-valid fix — see the comment in `render.yaml` — but Cloudinary is the one this project is actually configured for, and it's free.)
 
-**One honest caveat that's still true either way**: Render's **free** Postgres database expires after 90 days — Render emails a warning; upgrade it or take a `pg_dump` backup before then if you want to keep it going. (Unrelated to the Disk above — that's about the database, not file storage.)
+6. **VonBot — optional**: an automated account that reposts one trending gaming/anime/movie/superhero image a day so the feed stays active on its own. Needs three things, all covered in `backend/.env.example`: a free Reddit "script" app (`reddit.com/prefs/apps`) for `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET`, a `VONBOT_KEY` secret on Render, and that same `VONBOT_KEY` value added as a repo secret in GitHub (Settings → Secrets and variables → Actions) so `.github/workflows/vonbot.yml` can call it on a schedule. Leaving `REDDIT_CLIENT_ID` unset just means VonBot never posts — nothing else depends on it.
+
+**One honest caveat that's still true regardless of the above**: Render's **free** Postgres database expires after 90 days — Render emails a warning; upgrade it or take a `pg_dump` backup before then if you want to keep it going. (Unrelated to uploads above — that's about the database, not file storage.)
 
 ## The founder account
 
@@ -80,7 +81,7 @@ Give him the code, have him sign up with his real birthday set, and the rest is 
 
 ## Easter eggs
 
-- **Konami code** (↑ ↑ ↓ ↓ ← → ← → B A) anywhere in the app → confetti + a toast
+- **Konami code** (↑ ↑ ↓ ↓ ← → ← → B A) anywhere in the app → confetti + a toast. On mobile, where there's no keyboard to press arrow keys on, the same 10-step sequence works as touch gestures instead: swipe ↑ ↑ ↓ ↓ ← → ← → then tap twice (see `frontend/src/hooks/useKonamiCode.js`)
 - **Tap the alien logo 3 times** → drops you into a hidden, actually-playable Space Invaders game (also just the site's 404 page — any bad URL lands there too)
 - **Tap the logo 5 times** (keep going past 3) → a few seconds of rainbow "party mode" on the header, on top of the game launch
 - **Double-tap a photo** on a post → likes it with a heart burst, Instagram-style
@@ -94,9 +95,12 @@ Don't spoil these for him.
 - **Gamer tags**: PSN, Xbox, and PC handles as linked-account badges, same mechanism as the social platforms below
 - **Achievement posts**: tag a post with a game (🏆 badge) and attach a screenshot, same feed as everything else
 - **Friends**: search by name/username, or import from phone contacts via the browser's native Contact Picker (Chrome on Android; falls back to search everywhere else since that API isn't available on desktop/iOS browsers) — nothing from a contact list is ever stored, it's a one-shot match against existing accounts (see `backend/src/routes/contacts.js`)
-- **Feed**: Instagram-style posts with photos/videos, captions, likes, comments — photos are converted to JPEG client-side before upload (fixes iPhone HEIC photos not rendering in non-Safari browsers, and sideways photos from EXIF orientation, see `frontend/src/lib/imageProcessing.js`)
-- **Messenger**: real-time 1:1 chat with typing indicators and online/offline presence
+- **Feed**: Instagram-style posts with photos/videos, captions, likes, comments — photos are converted to JPEG client-side before upload (fixes iPhone HEIC photos not rendering in non-Safari browsers, and sideways photos from EXIF orientation, see `frontend/src/lib/imageProcessing.js`). Picking a photo/video anywhere in the app (a post, a message) shows a real thumbnail preview before it's sent, not just a filename. A post with multiple photos/videos is a native swipeable carousel with a tap-to-jump thumbnail filmstrip underneath (see `frontend/src/components/PostCard.jsx`)
+- **Public posts**: a post is friends-only by default; a toggle on the composer (and on any of your own existing posts) opts it into everyone's feed instead — with a one-time warning dialog ("don't show this again" persists in `localStorage`) so going public is never an accident. The feed is friends' posts + your own + whatever anyone's made public (see `is_public` in `database/schema.sql` and `backend/src/routes/posts.js`)
+- **VonBot**: an automated account that reposts one trending gaming/anime/movie/superhero-news image a day (pulled from Reddit) as a public post, so the feed stays active on its own between real posts — see `backend/src/lib/vonbot.js` and the "VonBot" step under Deploying below for how it's actually triggered
+- **Messenger**: real-time 1:1 chat with typing indicators and online/offline presence, and now a photo/video attachment per message (same upload pipeline as posts)
 - **Calls**: real audio/video calls over WebRTC, signaled through the same Socket.IO connection (see `backend/src/sockets/index.js` and `frontend/src/context/CallContext.jsx`)
+- **Notifications**: an incoming call, video call, or new message vibrates the phone and — if the app isn't the focused tab — pops a native OS notification, routed through the installed PWA's own service worker so it actually shows up on iOS too (see `frontend/src/lib/notify.js`)
 - **Block / unfriend**: blocking removes any friendship and stops messaging, feed visibility, and profile access in both directions from then on (see `backend/src/lib/blocks.js`); unfriending just ends the friendship, no re-adding needed to reconnect
 - **Linked accounts**: Facebook/Instagram/TikTok/Snapchat handles shown as badges, plus an "I just posted" button that notifies friends with a link out — see the note below on why this isn't automatic
 - **Share**: a real "Share to Facebook" button (Facebook's own share dialog, no API key needed); Instagram/TikTok don't allow outside apps to post into someone's feed at all, so those save the photo/video to the device and prompt the person to post it themselves
@@ -110,6 +114,9 @@ Facebook, Instagram, TikTok, and Snapchat don't let outside apps read a user's (
 - **Calls use a public STUN server only** (no TURN relay) — works on most home/mobile networks, but a call between two people on strict/symmetric NATs (some corporate or public wifi) may fail to connect. Adding a TURN server (e.g. a cheap one from Twilio or Metered) to `ICE_SERVERS` in `frontend/src/context/CallContext.jsx` would fix that if it comes up.
 - **PWA icon is an SVG** (`frontend/public/icon.svg`, the alien sprite) — works for install-to-home-screen on Android/Chrome; iOS Safari's home screen icon support is more reliable with real PNGs. Swap in 192x192/512x512 PNGs there if you want a sharper icon on iPhone.
 - **`intro-video.mp4` is ~31MB** — fine for local dev and a fast connection, but worth knowing it's the single biggest thing a first-time visitor downloads. Compressing it (e.g. `ffmpeg -i in.mp4 -vcodec libx264 -crf 28 out.mp4`) to a few MB would make the intro load a lot faster on mobile data, if that ever comes up.
+- **VonBot depends on Reddit staying reachable the way it is today** — its anonymous JSON endpoints already stopped working once (they now redirect to a login wall), which is why this goes through a real Reddit app instead. If Reddit changes its API terms/access again, VonBot just quietly stops posting (`REDDIT_CLIENT_ID` unset has the same effect) — nothing else breaks.
+- **The "make public" warning's "don't show again" is per-browser** (`localStorage`), not per-account — a different device or a cleared browser will see the warning again once, even for the same person.
+- **Native notifications only fire while something's actually running the app** — a backgrounded tab or an installed PWA in the background still counts, but a fully closed browser/app does not. True push-when-closed would need a different setup (a Push subscription per user + a `web-push` library on the backend), which this doesn't do.
 
 ## Project layout
 
@@ -117,17 +124,18 @@ Facebook, Instagram, TikTok, and Snapchat don't let outside apps read a user's (
 VonBook/
   backend/          Express API + Socket.IO, PostgreSQL via `pg`
     src/
-      routes/        one file per resource (auth, users, friends, posts, messages, ...)
+      routes/        one file per resource (auth, users, friends, posts, messages, vonbot, ...)
       sockets/       chat + webrtc signaling + presence
       middleware/     auth, csrf, uploads, error handling
-      lib/            small shared helpers (blocks, friends, notify, sessions, ...)
+      lib/            small shared helpers (blocks, friends, notify, sessions, cloudinary, reddit, vonbot, ...)
   frontend/         React + Vite, mobile-first CSS, installable PWA
     src/
       pages/          one per screen
-      components/     shared UI (avatar, post card, call overlay, intro splash, ...)
+      components/     shared UI (avatar, post card, call overlay, intro splash, public-post warning, ...)
       context/        auth / socket / call / toast providers
-      lib/            image normalization (HEIC/orientation fix)
+      lib/            image normalization (HEIC/orientation fix), native notifications, public-post warning state
   database/
     schema.sql       the whole db schema, safe to re-run
+  .github/workflows/ scheduled ping that triggers VonBot's posting tick
   render.yaml        Render Blueprint (backend + Postgres)
 ```
