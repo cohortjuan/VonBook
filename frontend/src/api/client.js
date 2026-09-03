@@ -57,12 +57,26 @@ async function request(path, options = {}) {
   return data;
 }
 
+// cloudinary's automatic quality/format optimization (q_auto picks the
+// smallest quality that still looks right, f_auto picks the best format
+// per browser -- webp/avif for images, whatever the browser actually
+// supports for video) -- a url transformation, not an upload-time setting,
+// so it applies retroactively to everything already uploaded too. only
+// touches cloudinary's own /image/upload/ or /video/upload/ urls; VonBot's
+// rss-sourced images (ign, screenrant, ...) are absolute urls on other
+// hosts and pass through the branch below untouched.
+const CLOUDINARY_UPLOAD_RE = /^(https:\/\/res\.cloudinary\.com\/[^/]+\/(?:image|video)\/upload\/)(?!q_auto)(.*)$/;
+
 // absolute urls (an external avatar someone linked, before upload support
-// existed) pass through unchanged; anything else is a path this api served
-// under /uploads
+// existed, or VonBot's rss-sourced images) pass through unchanged aside
+// from the cloudinary optimization above; anything else is a path this
+// api served under /uploads
 export function getFileUrl(path) {
   if (!path) return null;
-  if (/^https?:\/\//i.test(path)) return path;
+  if (/^https?:\/\//i.test(path)) {
+    const cloudinaryMatch = CLOUDINARY_UPLOAD_RE.exec(path);
+    return cloudinaryMatch ? `${cloudinaryMatch[1]}q_auto,f_auto/${cloudinaryMatch[2]}` : path;
+  }
   const base = API_URL.replace(/\/api\/?$/, '');
   return `${base}${path}`;
 }
