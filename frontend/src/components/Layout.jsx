@@ -12,14 +12,16 @@ import { useFounderBirthday } from '../hooks/useFounderBirthday.js';
 import { api } from '../api/client.js';
 import { requestNotificationPermission, vibrate, notifyIfAway } from '../lib/notify.js';
 import { NOTIFICATION_LABEL } from '../lib/notificationText.js';
+import { getNotificationPrefs } from '../lib/notificationPrefs.js';
 
-// only these are urgent enough to buzz the phone / pop a native
+// only these are urgent enough to ever buzz the phone / pop a native
 // notification for -- likes and comments would just be spammy noise on
 // something this size (a birthday present for a few friends, not a feed
 // people are glued to). 'report' only ever reaches a dev account (see
-// is_dev on users, routes/posts.js) -- it's the one type where "notify me
-// right away" is the actual point.
-const BUZZ_TYPES = new Set(['message', 'missed_call', 'report']);
+// is_dev on users, routes/posts.js). each maps to one of the toggles in
+// Settings (see lib/notificationPrefs.js) -- missed_call rides on the
+// same "calls" toggle as the live incoming-call ring in CallContext.jsx.
+const BUZZ_TYPE_TO_PREF = { message: 'messages', missed_call: 'calls', report: 'reports' };
 
 // used two ways: as a react-router layout route (renders its nested routes
 // via Outlet, the normal case for every authenticated page) and, from
@@ -64,7 +66,8 @@ export default function Layout({ children }) {
     const onNotification = (n) => {
       setUnreadNotifications((c) => c + 1);
       if (n.type === 'message') setUnreadMessages((c) => c + 1);
-      if (BUZZ_TYPES.has(n.type)) {
+      const prefKey = BUZZ_TYPE_TO_PREF[n.type];
+      if (prefKey && getNotificationPrefs()[prefKey]) {
         vibrate(80);
         notifyIfAway(n.actor_display_name || 'VonBook', {
           body: NOTIFICATION_LABEL[n.type]?.(n) || 'You have a new notification',

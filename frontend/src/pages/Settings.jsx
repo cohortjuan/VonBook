@@ -8,14 +8,21 @@ import ImageCropper from '../components/ImageCropper.jsx';
 import PublicPostWarning from '../components/PublicPostWarning.jsx';
 import { normalizeImageFile } from '../lib/imageProcessing.js';
 import { requestNotificationPermission } from '../lib/notify.js';
+import { getNotificationPrefs, setNotificationPref } from '../lib/notificationPrefs.js';
 import { publicWarningDismissed } from '../lib/publicPostWarning.js';
 
 const NOTIF_STATUS_LABEL = {
-  granted: '✅ Enabled -- you\'ll get a vibration + notification for calls and messages when the app isn\'t the active tab.',
+  granted: "✅ Enabled -- the categories checked below will vibrate + pop a notification when the app isn't the active tab.",
   denied: "🔕 Blocked -- you'll need to allow notifications for this site in your browser's settings to turn it back on.",
   default: "Not turned on yet.",
   unsupported: "Not supported in this browser.",
 };
+
+const NOTIF_CATEGORIES = [
+  { key: 'calls', label: '📞 Calls & video calls' },
+  { key: 'messages', label: '💬 Messages' },
+  { key: 'reports', label: '🚩 Reports (dev only)', devOnly: true },
+];
 
 const GAMER_PLATFORMS = ['psn', 'xbox', 'pc'];
 const SOCIAL_PLATFORMS = ['facebook', 'instagram', 'tiktok', 'snapchat', 'other'];
@@ -51,7 +58,13 @@ export default function Settings() {
   const [notifStatus, setNotifStatus] = useState(() =>
     typeof Notification !== 'undefined' ? Notification.permission : 'unsupported',
   );
+  const [notifPrefs, setNotifPrefs] = useState(getNotificationPrefs);
   const [showBulkPublicWarning, setShowBulkPublicWarning] = useState(false);
+
+  function toggleNotifCategory(category, enabled) {
+    setNotificationPref(category, enabled);
+    setNotifPrefs((prev) => ({ ...prev, [category]: enabled }));
+  }
 
   useEffect(() => {
     api.linkedAccounts.mine().then((rows) => {
@@ -227,6 +240,18 @@ export default function Settings() {
           Enable notifications
         </button>
       )}
+      <div className="notif-categories">
+        {NOTIF_CATEGORIES.filter((c) => !c.devOnly || user.is_dev).map((c) => (
+          <label key={c.key} className="notif-category-row">
+            <input
+              type="checkbox"
+              checked={notifPrefs[c.key]}
+              onChange={(e) => toggleNotifCategory(c.key, e.target.checked)}
+            />
+            {c.label}
+          </label>
+        ))}
+      </div>
 
       <h2>Post Privacy</h2>
       <p className="muted">
