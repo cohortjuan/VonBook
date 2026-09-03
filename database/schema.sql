@@ -163,8 +163,8 @@ CREATE TABLE IF NOT EXISTS posts (
 -- opts it into the public feed (see routes/posts.js).
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false;
 
--- reddit post ids VonBot has already reposted (see lib/vonbot.js), so a
--- tick that sees the same top-of-day post twice skips it instead of
+-- rss item ids/links VonBot has already reposted (see lib/vonbot.js), so a
+-- tick that sees the same feed item twice skips it instead of
 -- double-posting.
 CREATE TABLE IF NOT EXISTS vonbot_seen (
   source_id   TEXT PRIMARY KEY,
