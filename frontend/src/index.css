@@ -911,6 +911,11 @@ video {
   padding: 0.3rem 0.7rem;
   font-size: 0.8rem;
 }
+button.linked-badge {
+  font-family: inherit;
+  color: inherit;
+  cursor: pointer;
+}
 .profile-actions {
   display: flex;
   flex-wrap: wrap;

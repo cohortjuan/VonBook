@@ -95,6 +95,17 @@ export default function Profile() {
     }
   }
 
+  async function copyHandle(handle, label) {
+    try {
+      await navigator.clipboard.writeText(handle);
+      toast(`Copied ${label} tag: ${handle}`, 'success');
+    } catch {
+      // clipboard access blocked (permissions, insecure context, etc) --
+      // the toast alone still shows the handle, so it's not a dead end
+      toast(`${label} tag: ${handle}`, 'success');
+    }
+  }
+
   return (
     <div className={`page profile-page ${profile.is_founder ? 'founder-profile' : ''}`}>
       {founderToday && <Confetti onDone={() => {}} />}
@@ -114,11 +125,27 @@ export default function Profile() {
 
         {linked.length > 0 && (
           <div className="linked-badges">
-            {linked.map((l) => (
-              <a key={l.platform} href={l.url || '#'} target="_blank" rel="noreferrer" className="linked-badge">
-                {PLATFORM_ICON[l.platform]} {PLATFORM_LABEL[l.platform]}
-              </a>
-            ))}
+            {linked.map((l) =>
+              l.url ? (
+                <a key={l.platform} href={l.url} target="_blank" rel="noreferrer" className="linked-badge" title={`@${l.handle}`}>
+                  {PLATFORM_ICON[l.platform]} {PLATFORM_LABEL[l.platform]}
+                </a>
+              ) : (
+                // gamer tags usually have no real profile url to link to --
+                // a bare "#" href used to sit here and go nowhere. showing
+                // the handle on hover and copying it on tap is actually
+                // useful instead of a dead link.
+                <button
+                  key={l.platform}
+                  type="button"
+                  className="linked-badge"
+                  title={`@${l.handle} -- tap to copy`}
+                  onClick={() => copyHandle(l.handle, PLATFORM_LABEL[l.platform])}
+                >
+                  {PLATFORM_ICON[l.platform]} {PLATFORM_LABEL[l.platform]}
+                </button>
+              ),
+            )}
           </div>
         )}
 
