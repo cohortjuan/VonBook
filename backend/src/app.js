@@ -14,6 +14,7 @@ import { messagesRouter } from './routes/messages.js';
 import { linkedAccountsRouter } from './routes/linked-accounts.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { callsRouter } from './routes/calls.js';
+import { vonbotRouter } from './routes/vonbot.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { requireAuth } from './middleware/requireAuth.js';
 import { csrfProtection } from './middleware/csrf.js';
@@ -77,6 +78,11 @@ app.use('/api/messages', requireAuth, csrfProtection, messagesRouter);
 app.use('/api/linked-accounts', requireAuth, csrfProtection, linkedAccountsRouter);
 app.use('/api/notifications', requireAuth, csrfProtection, notificationsRouter);
 app.use('/api/calls', requireAuth, csrfProtection, callsRouter);
+
+// no requireAuth/csrfProtection: this is pinged by a scheduled GitHub
+// Actions workflow, not a logged-in browser -- see routes/vonbot.js for
+// its own secret-header gate.
+app.use('/api/vonbot', vonbotRouter);
 
 app.use(notFound);
 app.use(errorHandler);

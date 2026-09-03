@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { normalizeImageFiles } from '../lib/imageProcessing.js';
+import { publicWarningDismissed } from '../lib/publicPostWarning.js';
+import PublicPostWarning from './PublicPostWarning.jsx';
 
 export default function CreatePost({ onCreated }) {
   const toast = useToast();
@@ -10,6 +12,8 @@ export default function CreatePost({ onCreated }) {
   const [previews, setPreviews] = useState([]);
   const [gameTag, setGameTag] = useState('');
   const [showGameTag, setShowGameTag] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
+  const [showPublicWarning, setShowPublicWarning] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // one object URL per picked file, regenerated (and the old ones revoked)
@@ -24,6 +28,15 @@ export default function CreatePost({ onCreated }) {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
+  function handlePublicToggle(e) {
+    const checked = e.target.checked;
+    if (checked && !publicWarningDismissed()) {
+      setShowPublicWarning(true);
+      return;
+    }
+    setIsPublic(checked);
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!caption.trim() && files.length === 0) return;
@@ -35,6 +48,7 @@ export default function CreatePost({ onCreated }) {
       const formData = new FormData();
       formData.append('caption', caption.trim());
       if (gameTag.trim()) formData.append('game_tag', gameTag.trim());
+      formData.append('is_public', String(isPublic));
       normalized.forEach((f) => formData.append('media', f));
       const post = await api.posts.create(formData);
       onCreated(post);
@@ -42,6 +56,7 @@ export default function CreatePost({ onCreated }) {
       setFiles([]);
       setGameTag('');
       setShowGameTag(false);
+      setIsPublic(false);
       e.target.reset();
     } catch (err) {
       toast(err.message, 'error');
@@ -91,6 +106,11 @@ export default function CreatePost({ onCreated }) {
         </div>
       )}
 
+      <label className="create-post-public-toggle">
+        <input type="checkbox" checked={isPublic} onChange={handlePublicToggle} />
+        {isPublic ? '🌐 Visible to everyone' : '🔒 Friends only'}
+      </label>
+
       <div className="create-post-row">
         <label className="btn-secondary file-picker">
           📷 Photo/Video
@@ -106,6 +126,16 @@ export default function CreatePost({ onCreated }) {
           {busy ? 'Posting…' : 'Post'}
         </button>
       </div>
+
+      {showPublicWarning && (
+        <PublicPostWarning
+          onCancel={() => setShowPublicWarning(false)}
+          onConfirm={() => {
+            setShowPublicWarning(false);
+            setIsPublic(true);
+          }}
+        />
+      )}
     </form>
   );
 }

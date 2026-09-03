@@ -40,8 +40,10 @@ async function attachMediaAndCounts(posts, viewerId) {
   }));
 }
 
-// GET /api/posts/feed?before=<postId> -- your own posts + friends' posts,
-// newest first, cursor-paginated by post id
+// GET /api/posts/feed?before=<postId> -- your own posts + friends' posts +
+// anyone's public post (see is_public on posts, routes/posts.js PATCH
+// below), minus anything from someone blocked either direction, newest
+// first, cursor-paginated by post id
 postsRouter.get('/feed', async (req, res, next) => {
   try {
     const friendIds = await getFriendIds(req.user.id);
@@ -49,13 +51,18 @@ postsRouter.get('/feed', async (req, res, next) => {
     const before = Number(req.query.before) || null;
 
     const result = await pool.query(
-      `SELECT p.id, p.caption, p.game_tag, p.created_at, ${AUTHOR_COLUMNS}
+      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.created_at, ${AUTHOR_COLUMNS}
        FROM posts p JOIN users u ON u.id = p.author_id
-       WHERE p.author_id = ANY($1) AND p.deleted_at IS NULL
+       WHERE (p.author_id = ANY($1) OR p.is_public = true) AND p.deleted_at IS NULL
          AND ($2::int IS NULL OR p.id < $2)
+         AND NOT EXISTS (
+           SELECT 1 FROM blocks b
+           WHERE (b.blocker_id = $3 AND b.blocked_id = p.author_id)
+              OR (b.blocker_id = p.author_id AND b.blocked_id = $3)
+         )
        ORDER BY p.id DESC
        LIMIT 20`,
-      [authorIds, before],
+      [authorIds, before, req.user.id],
     );
 
     res.json(await attachMediaAndCounts(result.rows, req.user.id));
@@ -73,17 +80,18 @@ postsRouter.get('/user/:username', async (req, res, next) => {
     const author = userResult.rows[0];
     if (!author) return res.status(404).json({ error: 'user not found' });
 
+    let publicOnly = false;
     if (author.id !== req.user.id) {
       if (await isBlockedEitherWay(req.user.id, author.id)) return res.status(404).json({ error: 'user not found' });
-      if (!(await areFriends(req.user.id, author.id))) return res.json([]);
+      publicOnly = !(await areFriends(req.user.id, author.id));
     }
 
     const result = await pool.query(
-      `SELECT p.id, p.caption, p.game_tag, p.created_at, ${AUTHOR_COLUMNS}
+      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.created_at, ${AUTHOR_COLUMNS}
        FROM posts p JOIN users u ON u.id = p.author_id
-       WHERE p.author_id = $1 AND p.deleted_at IS NULL
+       WHERE p.author_id = $1 AND p.deleted_at IS NULL AND ($2::boolean IS FALSE OR p.is_public = true)
        ORDER BY p.id DESC LIMIT 60`,
-      [author.id],
+      [author.id, publicOnly],
     );
     res.json(await attachMediaAndCounts(result.rows, req.user.id));
   } catch (err) {
@@ -91,11 +99,12 @@ postsRouter.get('/user/:username', async (req, res, next) => {
   }
 });
 
-// POST /api/posts { caption, game_tag? } + up to 10 files under field "media"
+// POST /api/posts { caption, game_tag?, is_public? } + up to 10 files under field "media"
 postsRouter.post('/', mediaUpload.array('media', 10), async (req, res, next) => {
   try {
     const caption = typeof req.body.caption === 'string' ? req.body.caption.trim() : '';
     const gameTag = typeof req.body.game_tag === 'string' ? req.body.game_tag.trim().slice(0, 100) : '';
+    const isPublic = req.body.is_public === 'true' || req.body.is_public === true;
     const files = req.files || [];
     if (!caption && files.length === 0) {
       return res.status(400).json({ error: 'a post needs a caption or at least one photo/video' });
@@ -105,8 +114,8 @@ postsRouter.post('/', mediaUpload.array('media', 10), async (req, res, next) => 
     try {
       await client.query('BEGIN');
       const postResult = await client.query(
-        `INSERT INTO posts (author_id, caption, game_tag) VALUES ($1, $2, $3) RETURNING id, caption, game_tag, created_at`,
-        [req.user.id, caption || null, gameTag || null],
+        `INSERT INTO posts (author_id, caption, game_tag, is_public) VALUES ($1, $2, $3, $4) RETURNING id, caption, game_tag, is_public, created_at`,
+        [req.user.id, caption || null, gameTag || null, isPublic],
       );
       const post = postResult.rows[0];
 
@@ -132,6 +141,22 @@ postsRouter.post('/', mediaUpload.array('media', 10), async (req, res, next) => 
     } finally {
       client.release();
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/posts/:postId { is_public } -- author only, flips a post
+// between friends-only (default) and visible in everyone's public feed
+postsRouter.patch('/:postId', async (req, res, next) => {
+  try {
+    const isPublic = req.body.is_public === true || req.body.is_public === 'true';
+    const result = await pool.query(
+      `UPDATE posts SET is_public = $1 WHERE id = $2 AND author_id = $3 AND deleted_at IS NULL RETURNING id, is_public`,
+      [isPublic, req.params.postId, req.user.id],
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'post not found' });
+    res.json(result.rows[0]);
   } catch (err) {
     next(err);
   }

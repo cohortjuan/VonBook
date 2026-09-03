@@ -157,6 +157,20 @@ CREATE TABLE IF NOT EXISTS posts (
   deleted_at  TIMESTAMPTZ
 );
 
+-- added after the table already existed in production -- see the comment
+-- on the same pattern above the messages table's media_url/media_type.
+-- defaults to false: a post is friends-only unless its author explicitly
+-- opts it into the public feed (see routes/posts.js).
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false;
+
+-- reddit post ids VonBot has already reposted (see lib/vonbot.js), so a
+-- tick that sees the same top-of-day post twice skips it instead of
+-- double-posting.
+CREATE TABLE IF NOT EXISTS vonbot_seen (
+  source_id   TEXT PRIMARY KEY,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_posts_author_created ON posts(author_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS post_media (

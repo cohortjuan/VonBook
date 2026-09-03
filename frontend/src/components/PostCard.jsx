@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, getFileUrl } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -6,6 +6,8 @@ import { useToast } from '../context/ToastContext.jsx';
 import Avatar from './Avatar.jsx';
 import DisplayName from './DisplayName.jsx';
 import ShareMenu from './ShareMenu.jsx';
+import PublicPostWarning from './PublicPostWarning.jsx';
+import { publicWarningDismissed } from '../lib/publicPostWarning.js';
 
 function timeAgo(iso) {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -29,6 +31,32 @@ export default function PostCard({ post, onRemoved }) {
   const [comments, setComments] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [mediaIndex, setMediaIndex] = useState(0);
+  const [isPublic, setIsPublic] = useState(post.is_public);
+  const [showPublicWarning, setShowPublicWarning] = useState(false);
+  const mediaScrollRef = useRef(null);
+
+  async function setVisibility(nextPublic) {
+    const prev = isPublic;
+    setIsPublic(nextPublic);
+    try {
+      await api.posts.setVisibility(post.id, nextPublic);
+    } catch (err) {
+      setIsPublic(prev);
+      toast(err.message, 'error');
+    }
+  }
+
+  function handleVisibilityToggle() {
+    if (isPublic) {
+      setVisibility(false);
+      return;
+    }
+    if (!publicWarningDismissed()) {
+      setShowPublicWarning(true);
+      return;
+    }
+    setVisibility(true);
+  }
 
   async function toggleLike() {
     const next = !liked;
@@ -48,6 +76,22 @@ export default function PostCard({ post, onRemoved }) {
     if (!liked) toggleLike();
     setShowHeart(true);
     setTimeout(() => setShowHeart(false), 700);
+  }
+
+  // native scroll-snap does the actual swipe gesture handling (touch drag,
+  // trackpad, momentum) -- this just keeps mediaIndex (for the active
+  // thumbnail) in sync with wherever the user ends up scrolled to.
+  function handleMediaScroll(e) {
+    const el = e.currentTarget;
+    if (!el.clientWidth) return;
+    setMediaIndex(Math.round(el.scrollLeft / el.clientWidth));
+  }
+
+  function scrollToMedia(i) {
+    const el = mediaScrollRef.current;
+    if (!el) return;
+    el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' });
+    setMediaIndex(i);
   }
 
   async function loadComments() {
@@ -85,7 +129,6 @@ export default function PostCard({ post, onRemoved }) {
   }
 
   const media = post.media || [];
-  const current = media[mediaIndex];
 
   return (
     <article className="post-card">
@@ -101,32 +144,49 @@ export default function PostCard({ post, onRemoved }) {
           </div>
         </Link>
         {post.author_id === user.id && (
-          <button className="post-delete" onClick={handleDelete} aria-label="Delete post">
-            🗑
-          </button>
+          <div className="post-owner-actions">
+            <button
+              className={`post-visibility-toggle ${isPublic ? 'public' : ''}`}
+              onClick={handleVisibilityToggle}
+              aria-label={isPublic ? 'Public -- visible to everyone. Tap to make friends-only' : 'Friends only. Tap to make public'}
+            >
+              {isPublic ? '🌐 Public' : '🔒 Friends'}
+            </button>
+            <button className="post-delete" onClick={handleDelete} aria-label="Delete post">
+              🗑
+            </button>
+          </div>
         )}
       </div>
 
       {post.game_tag && <span className="game-tag-badge">🏆 {post.game_tag}</span>}
       {post.caption && <p className="post-caption">{post.caption}</p>}
 
-      {current && (
-        <div className="post-media" onDoubleClick={handleMediaDoubleClick}>
-          {current.media_type === 'video' ? (
-            <video src={getFileUrl(current.media_url)} controls className="post-media-content" />
-          ) : (
-            <img src={getFileUrl(current.media_url)} alt="" className="post-media-content" />
-          )}
+      {media.length > 0 && (
+        <div className="post-media">
+          <div className="post-media-scroll" ref={mediaScrollRef} onScroll={handleMediaScroll} onDoubleClick={handleMediaDoubleClick}>
+            {media.map((m, i) => (
+              <div className="post-media-slide" key={i}>
+                {m.media_type === 'video' ? (
+                  <video src={getFileUrl(m.media_url)} controls className="post-media-content" />
+                ) : (
+                  <img src={getFileUrl(m.media_url)} alt="" className="post-media-content" />
+                )}
+              </div>
+            ))}
+          </div>
           {showHeart && <span className="like-heart-burst">❤️</span>}
           {media.length > 1 && (
-            <div className="post-media-dots">
+            <div className="post-media-thumbs">
               {media.map((m, i) => (
                 <button
                   key={i}
-                  className={`dot ${i === mediaIndex ? 'active' : ''}`}
-                  onClick={() => setMediaIndex(i)}
+                  className={`post-media-thumb ${i === mediaIndex ? 'active' : ''}`}
+                  onClick={() => scrollToMedia(i)}
                   aria-label={`Photo ${i + 1}`}
-                />
+                >
+                  {m.media_type === 'video' ? <video src={getFileUrl(m.media_url)} muted /> : <img src={getFileUrl(m.media_url)} alt="" />}
+                </button>
               ))}
             </div>
           )}
@@ -170,6 +230,16 @@ export default function PostCard({ post, onRemoved }) {
             </button>
           </form>
         </div>
+      )}
+
+      {showPublicWarning && (
+        <PublicPostWarning
+          onCancel={() => setShowPublicWarning(false)}
+          onConfirm={() => {
+            setShowPublicWarning(false);
+            setVisibility(true);
+          }}
+        />
       )}
     </article>
   );

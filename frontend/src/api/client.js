@@ -108,6 +108,7 @@ export const api = {
     feed: (before) => request(`/posts/feed${before ? `?before=${before}` : ''}`),
     byUser: (username) => request(`/posts/user/${encodeURIComponent(username)}`),
     create: (formData) => request('/posts', { method: 'POST', body: formData }),
+    setVisibility: (postId, isPublic) => request(`/posts/${postId}`, { method: 'PATCH', body: JSON.stringify({ is_public: isPublic }) }),
     remove: (postId) => request(`/posts/${postId}`, { method: 'DELETE' }),
     like: (postId) => request(`/posts/${postId}/like`, { method: 'POST' }),
     unlike: (postId) => request(`/posts/${postId}/like`, { method: 'DELETE' }),
