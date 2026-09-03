@@ -7,10 +7,33 @@ import { mediaUpload } from '../middleware/upload.js';
 import { finalizeUpload } from '../lib/cloudinary.js';
 import { normalizeUsername } from '../lib/normalize.js';
 import { fetchLinkPreview } from '../lib/linkPreview.js';
+import { extractMentionedUsernames } from '../lib/mentions.js';
 
 export const postsRouter = Router();
 
 const AUTHOR_COLUMNS = 'u.id AS author_id, u.username AS author_username, u.display_name AS author_display_name, u.avatar_url AS author_avatar_url, u.is_founder AS author_is_founder, u.founder_title AS author_founder_title, u.is_dev AS author_is_dev';
+
+// looks up which @usernames in `text` are real accounts (excluding
+// whoever wrote it) and notifies each of them. addToPostMentions also
+// adds a post_mentions row so the post shows up in their profile's
+// Tagged section -- true for a post's own caption, false for a comment
+// (a comment mention still notifies, it just isn't a "tagged post").
+async function notifyMentions({ io, actorId, postId, text, addToPostMentions }) {
+  const usernames = extractMentionedUsernames(text);
+  if (usernames.length === 0) return;
+
+  const result = await pool.query('SELECT id FROM users WHERE username = ANY($1) AND id <> $2 AND deleted_at IS NULL', [
+    usernames,
+    actorId,
+  ]);
+
+  for (const { id: mentionedId } of result.rows) {
+    if (addToPostMentions) {
+      await pool.query('INSERT INTO post_mentions (post_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [postId, mentionedId]);
+    }
+    await createNotification({ io, recipientId: mentionedId, actorId, type: 'mention', payload: { postId } });
+  }
+}
 
 async function attachMediaAndCounts(posts, viewerId) {
   if (posts.length === 0) return posts;
@@ -102,6 +125,51 @@ postsRouter.get('/user/:username', async (req, res, next) => {
   }
 });
 
+// GET /api/posts/tagged/:username -- posts where this person was
+// @mentioned in the caption (see post_mentions), visible to the viewer
+// under the exact same rule as the main feed: friends with the POST'S
+// author, or the post is public -- friendship/visibility with the tagged
+// person themself has nothing to do with it. show_tagged gates the whole
+// section for anyone other than the tagged person looking at their own
+// profile (see users.show_tagged).
+postsRouter.get('/tagged/:username', async (req, res, next) => {
+  try {
+    const username = normalizeUsername(req.params.username);
+    const userResult = await pool.query('SELECT id, show_tagged FROM users WHERE username = $1 AND deleted_at IS NULL', [
+      username,
+    ]);
+    const taggedUser = userResult.rows[0];
+    if (!taggedUser) return res.status(404).json({ error: 'user not found' });
+
+    if (taggedUser.id !== req.user.id && !taggedUser.show_tagged) {
+      return res.json([]);
+    }
+
+    const friendIds = await getFriendIds(req.user.id);
+    const authorIds = [req.user.id, ...friendIds];
+
+    const result = await pool.query(
+      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.hidden_at, p.link_url, p.link_title, p.link_image_url, p.created_at, ${AUTHOR_COLUMNS}
+       FROM post_mentions pm
+       JOIN posts p ON p.id = pm.post_id
+       JOIN users u ON u.id = p.author_id
+       WHERE pm.user_id = $1 AND p.deleted_at IS NULL
+         AND (p.author_id = ANY($2) OR p.is_public = true)
+         AND (p.hidden_at IS NULL OR $4 = true)
+         AND NOT EXISTS (
+           SELECT 1 FROM blocks b
+           WHERE (b.blocker_id = $3 AND b.blocked_id = p.author_id)
+              OR (b.blocker_id = p.author_id AND b.blocked_id = $3)
+         )
+       ORDER BY p.id DESC LIMIT 60`,
+      [taggedUser.id, authorIds, req.user.id, req.user.is_dev],
+    );
+    res.json(await attachMediaAndCounts(result.rows, req.user.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/posts { caption, game_tag?, is_public?, link_url? } + up to 10 files under field "media"
 postsRouter.post('/', mediaUpload.array('media', 10), async (req, res, next) => {
   try {
@@ -147,6 +215,8 @@ postsRouter.post('/', mediaUpload.array('media', 10), async (req, res, next) => 
       }
 
       await client.query('COMMIT');
+
+      await notifyMentions({ io: req.app.get('io'), actorId: req.user.id, postId: post.id, text: caption, addToPostMentions: true });
 
       const [full] = await attachMediaAndCounts(
         [{ ...post, author_id: req.user.id, author_username: req.user.username, author_display_name: req.user.display_name, author_avatar_url: req.user.avatar_url, author_is_founder: req.user.is_founder, author_founder_title: req.user.founder_title, author_is_dev: req.user.is_dev }],
@@ -361,6 +431,7 @@ postsRouter.post('/:postId/comments', async (req, res, next) => {
     if (parentAuthorId && parentAuthorId !== authorId) {
       await createNotification({ io, recipientId: parentAuthorId, actorId: req.user.id, type: 'comment', payload: { postId } });
     }
+    await notifyMentions({ io, actorId: req.user.id, postId, text: body, addToPostMentions: false });
 
     res.status(201).json({
       ...result.rows[0],

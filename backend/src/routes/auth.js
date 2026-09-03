@@ -92,6 +92,7 @@ function publicUser(row) {
     founder_title: row.founder_title,
     is_dev: row.is_dev,
     now_playing: row.now_playing,
+    show_tagged: row.show_tagged,
     created_at: row.created_at,
   };
 }

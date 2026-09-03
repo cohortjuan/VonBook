@@ -341,7 +341,7 @@ function CommentRow({ comment, onReply, isReply = false }) {
           user={{ display_name: comment.author_display_name, is_founder: comment.author_is_founder, username: comment.author_username }}
           className="comment-author"
         />
-        <span className="comment-body">{comment.body}</span>
+        <span className="comment-body">{linkifyText(comment.body)}</span>
         <div className="comment-meta">
           <span title={fullDateTime(comment.created_at)}>{timeAgo(comment.created_at)}</span>
           <button type="button" className="comment-reply-btn" onClick={() => onReply(comment)}>

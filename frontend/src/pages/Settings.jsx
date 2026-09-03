@@ -48,6 +48,7 @@ export default function Settings() {
     birthday: user.birthday || '',
     now_playing: user.now_playing || '',
   });
+  const [showTagged, setShowTagged] = useState(user.show_tagged !== false);
   const [linked, setLinked] = useState({});
   const [pingPlatform, setPingPlatform] = useState('');
   const [pingMessage, setPingMessage] = useState('');
@@ -162,6 +163,18 @@ export default function Settings() {
     setNotifStatus(await requestNotificationPermission());
   }
 
+  async function toggleShowTagged(e) {
+    const checked = e.target.checked;
+    setShowTagged(checked);
+    try {
+      await api.users.updateMe({ show_tagged: checked });
+      await refreshUser();
+    } catch (err) {
+      setShowTagged(!checked);
+      toast(err.message, 'error');
+    }
+  }
+
   async function applyAllPostsVisibility(isPublic) {
     try {
       const res = await api.posts.setAllVisibility(isPublic);
@@ -265,6 +278,15 @@ export default function Settings() {
           🔒 Make all posts friends-only
         </button>
       </div>
+
+      <label className="notif-category-row">
+        <input type="checkbox" checked={showTagged} onChange={toggleShowTagged} />
+        Show posts I'm tagged in on my profile
+      </label>
+      <p className="muted small">
+        Off just hides the Tagged section from other people viewing your profile -- you still get notified when someone @tags you
+        either way, and you can still see it yourself.
+      </p>
 
       <h2>Gamer Tags</h2>
       <p className="muted">Link your PSN, Xbox, and PC tags so friends can find and add you on other platforms.</p>

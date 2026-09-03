@@ -73,7 +73,7 @@ export default function CreatePost({ onCreated }) {
   return (
     <form className="create-post" onSubmit={handleSubmit}>
       <textarea
-        placeholder="What's going on?"
+        placeholder="What's going on? (tag someone with @username)"
         value={caption}
         onChange={(e) => setCaption(e.target.value)}
         rows={2}

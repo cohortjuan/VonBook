@@ -9,4 +9,5 @@ export const NOTIFICATION_LABEL = {
   missed_call: () => `you missed a call`,
   platform_ping: (n) => `posted something new on ${n.payload?.platform || 'another app'}${n.payload?.message ? `: "${n.payload.message}"` : ''}`,
   report: (n) => `reported a post${n.payload?.authorUsername ? ` by @${n.payload.authorUsername}` : ''}`,
+  mention: () => `tagged you`,
 };

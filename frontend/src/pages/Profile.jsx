@@ -33,6 +33,8 @@ export default function Profile() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [posts, setPosts] = useState(null);
+  const [taggedPosts, setTaggedPosts] = useState(null);
+  const [activeTab, setActiveTab] = useState('posts'); // 'posts' | 'tagged'
   const [linked, setLinked] = useState([]);
   const [busy, setBusy] = useState(false);
   // holds { kind: 'avatar'|'cover', file } while the crop modal is open,
@@ -47,6 +49,8 @@ export default function Profile() {
     setLoading(true);
     setProfile(null);
     setPosts(null);
+    setTaggedPosts(null);
+    setActiveTab('posts');
     const [p, l] = await Promise.all([
       api.users.get(username).catch((err) => {
         toast(err.message, 'error');
@@ -99,6 +103,16 @@ export default function Profile() {
       navigate(`/messages/${convo.id}`);
     } catch (err) {
       toast(err.message, 'error');
+    }
+  }
+
+  function selectTab(tab) {
+    setActiveTab(tab);
+    if (tab === 'tagged' && taggedPosts === null) {
+      api.posts
+        .tagged(username)
+        .then(setTaggedPosts)
+        .catch(() => setTaggedPosts([]));
     }
   }
 
@@ -265,26 +279,51 @@ export default function Profile() {
         </div>
       </div>
 
-      <div className="profile-grid">
-        {posts === null && <p className="muted center">Loading posts…</p>}
-        {posts?.length === 0 && <p className="muted center">No posts yet.</p>}
-        {posts?.map((post) => {
-          const cover = post.media?.[0];
-          return (
-            <div key={post.id} className="grid-tile">
-              {cover ? (
-                cover.media_type === 'video' ? (
-                  <video src={getFileUrl(cover.media_url)} muted />
-                ) : (
-                  <img src={getFileUrl(cover.media_url)} alt="" />
-                )
-              ) : (
-                <div className="grid-tile-text">{post.caption}</div>
-              )}
-            </div>
-          );
-        })}
+      <div className="profile-tabs">
+        <button className={`profile-tab ${activeTab === 'posts' ? 'active' : ''}`} onClick={() => selectTab('posts')}>
+          Posts
+        </button>
+        <button className={`profile-tab ${activeTab === 'tagged' ? 'active' : ''}`} onClick={() => selectTab('tagged')}>
+          Tagged
+        </button>
       </div>
+
+      <div className="profile-grid">
+        {activeTab === 'posts' ? (
+          <>
+            {posts === null && <p className="muted center">Loading posts…</p>}
+            {posts?.length === 0 && <p className="muted center">No posts yet.</p>}
+            {posts?.map((post) => (
+              <GridTile key={post.id} post={post} />
+            ))}
+          </>
+        ) : (
+          <>
+            {taggedPosts === null && <p className="muted center">Loading…</p>}
+            {taggedPosts?.length === 0 && <p className="muted center">No tagged posts yet.</p>}
+            {taggedPosts?.map((post) => (
+              <GridTile key={post.id} post={post} />
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GridTile({ post }) {
+  const cover = post.media?.[0];
+  return (
+    <div className="grid-tile">
+      {cover ? (
+        cover.media_type === 'video' ? (
+          <video src={getFileUrl(cover.media_url)} muted />
+        ) : (
+          <img src={getFileUrl(cover.media_url)} alt="" />
+        )
+      ) : (
+        <div className="grid-tile-text">{post.caption}</div>
+      )}
     </div>
   );
 }

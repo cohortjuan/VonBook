@@ -63,6 +63,12 @@ CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at) WHERE delet
 -- ---------------------------------------------------------------------
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_dev BOOLEAN NOT NULL DEFAULT false;
 
+-- whether a post that @mentions this person is allowed to show up in
+-- their profile's Tagged section for OTHER viewers -- doesn't affect
+-- whether they get notified of the mention, and doesn't hide it from
+-- themselves on their own profile either (see routes/posts.js).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS show_tagged BOOLEAN NOT NULL DEFAULT true;
+
 -- ---------------------------------------------------------------------
 -- sessions: opaque random tokens, hashed at rest, revocable by deleting
 -- the row -- same reasoning as Whispers App (see that project's
@@ -221,6 +227,19 @@ CREATE INDEX IF NOT EXISTS idx_post_comments_post_id ON post_comments(post_id, c
 -- single-level threading only (a reply can't itself be replied to) -- see
 -- routes/posts.js and the comment rendering in PostCard.jsx
 ALTER TABLE post_comments ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES post_comments(id) ON DELETE CASCADE;
+
+-- one row per @username mention found in a post's caption (not comments --
+-- a comment mention still notifies, it just doesn't add the post to
+-- anyone's Tagged section, see lib/mentions.js and routes/posts.js).
+-- powers the "Tagged" section on a profile page.
+CREATE TABLE IF NOT EXISTS post_mentions (
+  post_id     INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (post_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_mentions_user_id ON post_mentions(user_id);
 
 -- one row per (post, reporter) so repeat taps on the report button don't
 -- spam every dev account with duplicate notifications -- see routes/posts.js

@@ -10,7 +10,7 @@ export const usersRouter = Router();
 
 const PROFILE_FIELDS = `
   id, username, display_name, bio, avatar_url, cover_url, birthday,
-  is_founder, founder_title, is_dev, now_playing, created_at
+  is_founder, founder_title, is_dev, now_playing, show_tagged, created_at
 `;
 
 // GET /api/users/search?q=partial -- for "add manually": search by
@@ -112,22 +112,23 @@ usersRouter.get('/:username/email', async (req, res, next) => {
   }
 });
 
-// PATCH /api/users/me { display_name?, bio?, birthday?, now_playing? }
+// PATCH /api/users/me { display_name?, bio?, birthday?, now_playing?, show_tagged? }
 // for bio/now_playing, sending an empty string clears the field -- only an
 // actually-omitted (undefined -> null here) field leaves it unchanged
 usersRouter.patch('/me', async (req, res, next) => {
   try {
-    const { display_name, bio, birthday, now_playing } = req.body;
+    const { display_name, bio, birthday, now_playing, show_tagged } = req.body;
     const result = await pool.query(
       `UPDATE users SET
          display_name = COALESCE($2, display_name),
          bio = CASE WHEN $3::text IS NOT NULL THEN $3 ELSE bio END,
          birthday = CASE WHEN $4::text IS NOT NULL THEN $4::date ELSE birthday END,
          now_playing = CASE WHEN $5::text IS NOT NULL THEN NULLIF($5, '') ELSE now_playing END,
+         show_tagged = CASE WHEN $6::boolean IS NOT NULL THEN $6 ELSE show_tagged END,
          updated_at = now()
        WHERE id = $1
        RETURNING ${PROFILE_FIELDS}`,
-      [req.user.id, display_name?.trim() || null, bio ?? null, birthday ?? null, now_playing ?? null],
+      [req.user.id, display_name?.trim() || null, bio ?? null, birthday ?? null, now_playing ?? null, show_tagged ?? null],
     );
     res.json(result.rows[0]);
   } catch (err) {

@@ -583,8 +583,12 @@ video {
   overflow-wrap: break-word;
   font-size: 0.92rem;
 }
-.post-caption a {
+.post-caption a,
+.comment-body a {
   color: var(--primary);
+}
+.mention-link {
+  font-weight: 600;
 }
 .post-media {
   position: relative;
@@ -950,6 +954,25 @@ button.linked-badge {
   flex-wrap: wrap;
   gap: 0.5rem;
   justify-content: center;
+}
+.profile-tabs {
+  display: flex;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.profile-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 0.7rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.profile-tab.active {
+  color: var(--text);
+  box-shadow: inset 0 -2px var(--primary);
 }
 .profile-grid {
   display: grid;
