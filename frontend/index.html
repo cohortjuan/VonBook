@@ -5,6 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
     <meta name="theme-color" content="#7c3aed" />
     <meta name="description" content="VonBook -- friends, feed, chat, and calls, all in one place." />
+
+    <!-- Open Graph / link previews (Facebook, LinkedIn, iMessage, Discord...).
+         og:url and og:image MUST be absolute -- LinkedIn and Facebook fetch
+         the image from their own servers, so a relative path silently yields
+         a preview with no picture. og-image.jpg is 1200x630 (1.91:1), which
+         clears LinkedIn's 1200x627 minimum; it's a real frame of the intro
+         video with the real logo/wordmark overlay composited on top. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="VonBook" />
+    <meta property="og:title" content="VonBook -- the gamers lounge" />
+    <meta property="og:description" content="Friends, feed, chat, and calls, all in one place." />
+    <meta property="og:url" content="https://von-book.vercel.app/" />
+    <meta property="og:image" content="https://von-book.vercel.app/og-image.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The VonBook alien logo above the VonBook wordmark and the tagline 'the gamers lounge'." />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="VonBook -- the gamers lounge" />
+    <meta name="twitter:description" content="Friends, feed, chat, and calls, all in one place." />
+    <meta name="twitter:image" content="https://von-book.vercel.app/og-image.jpg" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
