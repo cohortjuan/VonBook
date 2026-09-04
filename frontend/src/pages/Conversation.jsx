@@ -126,7 +126,10 @@ export default function Conversation() {
             <Avatar user={otherUser} size={36} />
             <div>
               <DisplayName user={otherUser} className="conversation-header-name" />
-              <div className="muted small">{isOnline(otherUser.id) ? 'Online' : 'Offline'}</div>
+              {/* VonBot has no real socket connection to ever go "online" over --
+                  he's always available, so just say so rather than showing a
+                  bot-shaped hole in a feature meant to feel like texting someone */}
+              <div className="muted small">{otherUser.username === 'vonbot' || isOnline(otherUser.id) ? 'Online' : 'Offline'}</div>
             </div>
           </Link>
         )}
