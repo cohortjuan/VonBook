@@ -10,6 +10,7 @@ import PublicPostWarning from './PublicPostWarning.jsx';
 import { publicWarningDismissed } from '../lib/publicPostWarning.js';
 import { timeAgo, fullDateTime } from '../lib/timeAgo.js';
 import { linkifyText } from '../lib/linkify.jsx';
+import { safeHref } from '../lib/safeUrl.js';
 import { useMentionAutocomplete } from '../hooks/useMentionAutocomplete.js';
 import MentionSuggestions from './MentionSuggestions.jsx';
 
@@ -253,15 +254,28 @@ export default function PostCard({ post, onRemoved }) {
         </div>
       )}
 
-      {post.link_url && (
-        <a href={post.link_url} target="_blank" rel="noreferrer" className="post-link-card">
-          <img src={post.link_image_url || '/icon.svg'} alt="" className="post-link-image" />
-          <div className="post-link-info">
-            <div className="post-link-title">{post.link_title || post.link_url}</div>
-            <div className="post-link-domain">{linkDomain(post.link_url)}</div>
+      {/* safeHref, not post.link_url directly -- a post saved before the
+          backend's scheme check could carry a javascript: url, and React
+          renders those into href as-is. An unsafe one still shows its
+          preview, just not as a clickable link. */}
+      {post.link_url &&
+        (safeHref(post.link_url) ? (
+          <a href={safeHref(post.link_url)} target="_blank" rel="noreferrer" className="post-link-card">
+            <img src={post.link_image_url || '/icon.svg'} alt="" className="post-link-image" />
+            <div className="post-link-info">
+              <div className="post-link-title">{post.link_title || post.link_url}</div>
+              <div className="post-link-domain">{linkDomain(post.link_url)}</div>
+            </div>
+          </a>
+        ) : (
+          <div className="post-link-card">
+            <img src={post.link_image_url || '/icon.svg'} alt="" className="post-link-image" />
+            <div className="post-link-info">
+              <div className="post-link-title">{post.link_title || post.link_url}</div>
+              <div className="post-link-domain muted small">link hidden -- unsupported address</div>
+            </div>
           </div>
-        </a>
-      )}
+        ))}
 
       <div className="post-actions">
         <button className={`post-action ${liked ? 'liked' : ''}`} onClick={toggleLike}>

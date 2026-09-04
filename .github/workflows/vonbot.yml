@@ -2,10 +2,16 @@ name: VonBot posting tick
 
 # pings the backend a few times a day so VonBot reposts one fresh
 # gaming/anime/movie/superhero image -- see backend/src/routes/vonbot.js.
-# Render's free tier has no built-in scheduler and the backend goes to
-# sleep after 15 min idle, so this (a free GitHub Actions cron, already
-# living in this repo) is what actually triggers it; it also happens to
-# keep the backend from going fully cold.
+# Render's free tier has no built-in scheduler, so this (a free GitHub
+# Actions cron, already living in this repo) is what actually triggers it.
+#
+# NOTE: this does NOT keep the backend warm. Render's free tier sleeps
+# after 15 min idle and these run 4x/day, so each ping wakes it, VonBot
+# posts, and it's asleep again 15 min later -- the backend is cold for
+# almost the whole day, and the first visitor after that waits ~50s for
+# it to boot. Keeping it warm would need a ping every <15 min (an uptime
+# pinger like UptimeRobot's free tier is the usual answer; a cron this
+# frequent is not what GitHub Actions schedules are for).
 #
 # requires a VONBOT_KEY repo secret (Settings -> Secrets and variables ->
 # Actions) matching the VONBOT_KEY env var set on the Render backend.

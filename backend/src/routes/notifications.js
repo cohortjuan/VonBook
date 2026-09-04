@@ -57,15 +57,6 @@ notificationsRouter.delete('/', async (req, res, next) => {
   }
 });
 
-notificationsRouter.post('/:id/read', async (req, res, next) => {
-  try {
-    const result = await pool.query(
-      'UPDATE notifications SET read_at = now() WHERE id = $1 AND recipient_id = $2 RETURNING id',
-      [req.params.id, req.user.id],
-    );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'notification not found' });
-    res.status(204).end();
-  } catch (err) {
-    next(err);
-  }
-});
+// (there's deliberately no per-notification "mark read" route: opening the
+// notifications screen marks the whole list read via /read-all above, so a
+// single-id version had no caller and was only ever dead surface area.)

@@ -25,10 +25,45 @@ export function CallProvider({ children }) {
 
   const peerRef = useRef(null);
   const wasConnectedRef = useRef(false);
+  // ICE candidates that arrived before setRemoteDescription. addIceCandidate
+  // throws if the remote description isn't set yet, and candidates are
+  // one-shot -- the other side never re-sends them -- so dropping one costs
+  // a connection path permanently, and dropping the wrong one is a call
+  // that just never connects. Hold them here and flush once the remote
+  // description lands.
+  const pendingCandidatesRef = useRef([]);
+
+  async function addOrQueueCandidate(candidate) {
+    const pc = peerRef.current;
+    if (!pc || !pc.remoteDescription) {
+      pendingCandidatesRef.current.push(candidate);
+      return;
+    }
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch {
+      // a genuinely malformed/stale candidate -- the rest still stand
+    }
+  }
+
+  async function flushPendingCandidates() {
+    const pc = peerRef.current;
+    if (!pc) return;
+    const queued = pendingCandidatesRef.current;
+    pendingCandidatesRef.current = [];
+    for (const candidate of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch {
+        // ignore individually -- one bad candidate shouldn't drop the rest
+      }
+    }
+  }
 
   const cleanup = useCallback(() => {
     peerRef.current?.close();
     peerRef.current = null;
+    pendingCandidatesRef.current = [];
     localStream?.getTracks().forEach((t) => t.stop());
     setLocalStream(null);
     setRemoteStream(null);
@@ -154,18 +189,15 @@ export function CallProvider({ children }) {
           localStream?.getTracks().forEach((track) => pc.addTrack(track, localStream));
         }
         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        await flushPendingCandidates();
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit('call:signal', { toUserId: fromUserId, callId: activeCall?.callId, data: { kind: 'answer', sdp: answer } });
       } else if (data.kind === 'answer') {
         await peerRef.current?.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        await flushPendingCandidates();
       } else if (data.kind === 'ice' && data.candidate) {
-        try {
-          await peerRef.current?.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch {
-          // a candidate that arrives before setRemoteDescription completes
-          // is harmless to drop -- more will follow
-        }
+        await addOrQueueCandidate(data.candidate);
       }
     });
 

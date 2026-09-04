@@ -24,13 +24,27 @@ export default function Conversation() {
   const [attachment, setAttachment] = useState(null);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null); // a message object | null
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const bottomRef = useRef(null);
   const typingTimeout = useRef(null);
   const draftInputRef = useRef(null);
+  // suppresses the scroll-to-bottom effect when the messages array grew at
+  // the TOP (older history) rather than the bottom -- otherwise tapping
+  // "load older" yanks you straight back down to where you already were
+  const skipAutoScrollRef = useRef(false);
 
   useEffect(() => {
     setMessages(null);
-    api.messages.history(conversationId).then(setMessages).catch(() => setMessages([]));
+    setHasOlder(false);
+    api.messages
+      .history(conversationId)
+      .then((rows) => {
+        setMessages(rows);
+        // a full page back means there's very likely more behind it
+        setHasOlder(rows.length === 30);
+      })
+      .catch(() => setMessages([]));
     api.messages.markRead(conversationId).catch(() => {});
     api.messages
       .conversations()
@@ -61,8 +75,27 @@ export default function Conversation() {
   }, [socket, conversationId, user.id]);
 
   useEffect(() => {
+    if (skipAutoScrollRef.current) {
+      skipAutoScrollRef.current = false;
+      return;
+    }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  async function loadOlder() {
+    if (!messages || messages.length === 0 || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const older = await api.messages.history(conversationId, messages[0].id);
+      skipAutoScrollRef.current = true;
+      setMessages((prev) => [...older, ...(prev || [])]);
+      setHasOlder(older.length === 30);
+    } catch {
+      // leave what's already loaded alone; the button stays for a retry
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
 
   // object URL for whatever's currently attached, cleaned up whenever it
   // changes or the attachment is cleared
@@ -147,6 +180,11 @@ export default function Conversation() {
 
       <div className="conversation-messages">
         {messages === null && <p className="muted center">Loading…</p>}
+        {hasOlder && (
+          <button className="btn-secondary btn-small load-older-messages" onClick={loadOlder} disabled={loadingOlder}>
+            {loadingOlder ? 'Loading…' : 'Load older messages'}
+          </button>
+        )}
         {messages?.map((m) => (
           <div key={m.id} className={`message-bubble-row ${m.sender_id === user.id ? 'mine' : 'theirs'}`}>
             <div className={`message-bubble ${m.sender_id === user.id ? 'mine' : 'theirs'}`}>

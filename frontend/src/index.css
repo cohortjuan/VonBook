@@ -1411,6 +1411,17 @@ button.linked-badge {
   display: block;
   margin: 0 0 0.75rem auto;
 }
+.load-older-messages {
+  display: block;
+  margin: 0 auto 0.75rem;
+}
+.feed-load-error {
+  text-align: center;
+  padding: 1.5rem 1rem;
+}
+.feed-load-error p {
+  margin: 0 0 0.75rem;
+}
 
 /* ---------- calls ---------- */
 .call-modal-backdrop {

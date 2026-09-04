@@ -114,6 +114,13 @@ const SAFETY_SETTINGS = ['harassment', 'hate_speech', 'sexually_explicit', 'dang
 const SAFE_DEFLECTION = "Let's talk about something else -- what game or show have you been into lately? 🎮";
 const NO_TEXT_FALLBACK = 'Nice! 👍';
 
+// sent when the AI call fails outright (quota gone, provider down, every
+// retry exhausted). Saying *something* matters: VonBot silently ignoring
+// a message reads as "this app is broken" to whoever's waiting on him,
+// which is exactly what a kid would conclude.
+export const AI_UNAVAILABLE_REPLY =
+  "My brain's a little fuzzy right now 😵‍💫 -- give me a minute and try me again!";
+
 // Gemini's ListModels response turned out to still list a model
 // (gemini-2.5-flash) as generateContent-capable that then 404s when
 // actually called -- "no longer available to new users" -- so ListModels

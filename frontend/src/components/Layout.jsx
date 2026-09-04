@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import TopBar from './TopBar.jsx';
 import BottomNav from './BottomNav.jsx';
@@ -49,6 +49,8 @@ export default function Layout({ children }) {
       })
       .catch(() => {});
   }, []);
+
+  const outletContext = useMemo(() => ({ refreshUnread }), [refreshUnread]);
 
   useEffect(() => {
     refreshUnread();
@@ -103,9 +105,12 @@ export default function Layout({ children }) {
         </div>
       )}
       <TopBar unreadNotifications={unreadNotifications} />
-      <main className="app-main">
-        {children ?? <Outlet context={{ refreshUnread }} />}
-      </main>
+      {/* memoised: an inline object literal here is a new identity on every
+          render, and Notifications keys an effect off this context -- so
+          refreshing the unread count re-rendered Layout, which changed the
+          context, which re-ran the effect, which refreshed the count again.
+          It settled, but only after a wasted second round of API calls. */}
+      <main className="app-main">{children ?? <Outlet context={outletContext} />}</main>
       <BottomNav unreadMessages={unreadMessages} />
       <IncomingCallModal />
       <CallOverlay />

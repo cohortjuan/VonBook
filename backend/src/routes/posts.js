@@ -5,7 +5,7 @@ import { isBlockedEitherWay } from '../lib/blocks.js';
 import { createNotification } from '../lib/notify.js';
 import { mediaUpload } from '../middleware/upload.js';
 import { finalizeUpload } from '../lib/cloudinary.js';
-import { normalizeUsername } from '../lib/normalize.js';
+import { normalizeUsername, safeExternalUrl } from '../lib/normalize.js';
 import { fetchLinkPreview } from '../lib/linkPreview.js';
 import { extractMentionedUsernames } from '../lib/mentions.js';
 
@@ -212,13 +212,13 @@ postsRouter.post('/', mediaUpload.array('media', 10), async (req, res, next) => 
     const isPublic = req.body.is_public === 'true' || req.body.is_public === true;
     const files = req.files || [];
 
+    // safeExternalUrl, not a bare `new URL()`: that parses javascript: and
+    // data: urls happily, and this value gets rendered into an href on the
+    // post card -- see lib/normalize.js
     let linkUrl = null;
     if (typeof req.body.link_url === 'string' && req.body.link_url.trim()) {
-      try {
-        linkUrl = new URL(req.body.link_url.trim()).href;
-      } catch {
-        return res.status(400).json({ error: 'that link doesn\'t look like a valid url' });
-      }
+      linkUrl = safeExternalUrl(req.body.link_url);
+      if (!linkUrl) return res.status(400).json({ error: 'that link needs to be a normal http(s) web address' });
     }
 
     if (!caption && files.length === 0 && !linkUrl) {

@@ -9,6 +9,7 @@ import DisplayName from '../components/DisplayName.jsx';
 import Confetti from '../components/Confetti.jsx';
 import ImageCropper from '../components/ImageCropper.jsx';
 import { isTodayBirthday } from '../lib/birthday.js';
+import { safeHref } from '../lib/safeUrl.js';
 import { normalizeImageFile } from '../lib/imageProcessing.js';
 
 const PLATFORM_LABEL = {
@@ -194,15 +195,17 @@ export default function Profile() {
         {linked.length > 0 && (
           <div className="linked-badges">
             {linked.map((l) =>
-              l.url ? (
-                <a key={l.platform} href={l.url} target="_blank" rel="noreferrer" className="linked-badge" title={`@${l.handle}`}>
+              safeHref(l.url) ? (
+                <a key={l.platform} href={safeHref(l.url)} target="_blank" rel="noreferrer" className="linked-badge" title={`@${l.handle}`}>
                   {PLATFORM_ICON[l.platform]} {PLATFORM_LABEL[l.platform]}
                 </a>
               ) : (
-                // gamer tags usually have no real profile url to link to --
-                // a bare "#" href used to sit here and go nowhere. showing
-                // the handle on hover and copying it on tap is actually
-                // useful instead of a dead link.
+                // no url, or one that isn't safe to link to (see safeHref --
+                // rows predating the backend's scheme check could hold a
+                // javascript: url). gamer tags usually have no real profile
+                // url anyway, and a bare "#" href used to sit here going
+                // nowhere -- showing the handle on hover and copying it on
+                // tap is actually useful instead of a dead link.
                 <button
                   key={l.platform}
                   type="button"

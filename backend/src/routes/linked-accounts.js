@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { pool } from '../db/pool.js';
-import { normalizeUsername } from '../lib/normalize.js';
+import { normalizeUsername, safeExternalUrl } from '../lib/normalize.js';
 import { isBlockedEitherWay } from '../lib/blocks.js';
 import { getFriendIds } from '../lib/friends.js';
 import { createNotification } from '../lib/notify.js';
@@ -54,7 +54,11 @@ linkedAccountsRouter.put('/:platform', async (req, res, next) => {
 
     const handle = typeof req.body.handle === 'string' ? req.body.handle.trim() : '';
     if (!handle) return res.status(400).json({ error: 'a handle or username is required' });
-    const url = typeof req.body.url === 'string' && req.body.url.trim() ? req.body.url.trim() : null;
+    // scheme-checked, not just trimmed -- this value is rendered into an
+    // href on the profile page (see safeExternalUrl)
+    const rawUrl = typeof req.body.url === 'string' ? req.body.url.trim() : '';
+    const url = rawUrl ? safeExternalUrl(rawUrl) : null;
+    if (rawUrl && !url) return res.status(400).json({ error: 'that profile link needs to be a normal http(s) web address' });
 
     const result = await pool.query(
       `INSERT INTO linked_accounts (user_id, platform, handle, url) VALUES ($1, $2, $3, $4)

@@ -7,17 +7,27 @@ import { isBlockedEitherWay } from '../lib/blocks.js';
 import { createNotification } from '../lib/notify.js';
 import { mediaUpload } from '../middleware/upload.js';
 import { finalizeUpload } from '../lib/cloudinary.js';
-import { askVonBot, getVonBotId, isSelfHarmMessage, isVonBotAIEnabled, SELF_HARM_RESPONSE } from '../lib/vonbotAI.js';
+import {
+  askVonBot,
+  getVonBotId,
+  isSelfHarmMessage,
+  isVonBotAIEnabled,
+  AI_UNAVAILABLE_REPLY,
+  SELF_HARM_RESPONSE,
+} from '../lib/vonbotAI.js';
 
 export const messagesRouter = Router();
 
-// cheap in-memory cooldown so a burst of rapid messages doesn't blow
-// through a free-tier AI quota in one go -- same "in-memory is fine at
-// this scale" call as onlineSockets in sockets/index.js. resets on a
-// server restart, which just means the first message after a deploy
-// always gets an immediate reply -- harmless.
-const lastAIReplyAt = new Map();
-const AI_COOLDOWN_MS = 4000;
+// an in-flight guard, not a cooldown timer. A reply can take 15s+ once
+// retries are involved, so a time-based window let a second message start
+// a CONCURRENT interaction -- and since Gemini's Interactions API is
+// stateful, both would branch from the same previous_interaction_id and
+// whichever finished last would clobber the other's id, silently dropping
+// a turn out of VonBot's memory of the conversation. One reply per
+// conversation at a time removes the race entirely, and doubles as the
+// quota protection the cooldown was there for. In-memory is fine at this
+// scale, same call as onlineSockets in sockets/index.js.
+const vonbotReplyInFlight = new Set();
 
 // fired off after a message send (never awaited by the request) -- if the
 // other side of this 1:1 is VonBot, generates and posts a reply in the
@@ -29,34 +39,44 @@ async function triggerVonBotReply(io, conversationId, humanId, otherParticipants
   const vonbotId = await getVonBotId();
   if (!vonbotId || otherParticipants[0].user_id !== vonbotId) return;
 
-  const last = lastAIReplyAt.get(conversationId) || 0;
-  if (Date.now() - last < AI_COOLDOWN_MS) return;
-  lastAIReplyAt.set(conversationId, Date.now());
+  if (vonbotReplyInFlight.has(conversationId)) return;
+  vonbotReplyInFlight.add(conversationId);
 
-  let replyBody;
-  if (isSelfHarmMessage(incomingBody)) {
-    replyBody = SELF_HARM_RESPONSE;
-  } else {
-    // stateful: Gemini keeps this conversation's history server-side
-    // against its own interaction id, so only the new message plus that
-    // id ever needs to be sent -- see lib/vonbotAI.js
-    const convoResult = await pool.query('SELECT vonbot_interaction_id FROM conversations WHERE id = $1', [conversationId]);
-    const previousInteractionId = convoResult.rows[0]?.vonbot_interaction_id || null;
-    const { text, interactionId } = await askVonBot(incomingBody, previousInteractionId);
-    replyBody = text;
-    if (interactionId && interactionId !== previousInteractionId) {
-      await pool.query('UPDATE conversations SET vonbot_interaction_id = $1 WHERE id = $2', [interactionId, conversationId]);
+  try {
+    let replyBody;
+    if (isSelfHarmMessage(incomingBody)) {
+      replyBody = SELF_HARM_RESPONSE;
+    } else {
+      try {
+        // stateful: Gemini keeps this conversation's history server-side
+        // against its own interaction id, so only the new message plus that
+        // id ever needs to be sent -- see lib/vonbotAI.js
+        const convoResult = await pool.query('SELECT vonbot_interaction_id FROM conversations WHERE id = $1', [conversationId]);
+        const previousInteractionId = convoResult.rows[0]?.vonbot_interaction_id || null;
+        const { text, interactionId } = await askVonBot(incomingBody, previousInteractionId);
+        replyBody = text;
+        if (interactionId && interactionId !== previousInteractionId) {
+          await pool.query('UPDATE conversations SET vonbot_interaction_id = $1 WHERE id = $2', [interactionId, conversationId]);
+        }
+      } catch (err) {
+        // still say something -- silence looks like a broken app to
+        // whoever's sitting there waiting on a reply
+        console.error('VonBot AI reply failed:', err.message);
+        replyBody = AI_UNAVAILABLE_REPLY;
+      }
     }
-  }
 
-  const result = await pool.query(
-    `INSERT INTO messages (conversation_id, sender_id, body) VALUES ($1, $2, $3)
-     RETURNING id, conversation_id, sender_id, body, media_url, media_type, reply_to_id, created_at`,
-    [conversationId, vonbotId, replyBody],
-  );
-  const reply = result.rows[0];
-  if (io) io.to(`conversation:${conversationId}`).emit('message:new', reply);
-  await createNotification({ io, recipientId: humanId, actorId: vonbotId, type: 'message', payload: { conversationId } });
+    const result = await pool.query(
+      `INSERT INTO messages (conversation_id, sender_id, body) VALUES ($1, $2, $3)
+       RETURNING id, conversation_id, sender_id, body, media_url, media_type, reply_to_id, created_at`,
+      [conversationId, vonbotId, replyBody],
+    );
+    const reply = result.rows[0];
+    if (io) io.to(`conversation:${conversationId}`).emit('message:new', reply);
+    await createNotification({ io, recipientId: humanId, actorId: vonbotId, type: 'message', payload: { conversationId } });
+  } finally {
+    vonbotReplyInFlight.delete(conversationId);
+  }
 }
 
 // GET /api/messages/conversations -- every conversation you're in, with

@@ -7,11 +7,21 @@ export default function Feed() {
   const [posts, setPosts] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
+  // every failure path has to leave `posts` non-null: it stays null only
+  // while genuinely loading, so an uncaught rejection here used to strand
+  // the page on "Loading your feed..." forever with no way to retry.
   const load = useCallback(async (before) => {
-    const page = await api.posts.feed(before);
-    setPosts((prev) => (before ? [...(prev || []), ...page] : page));
-    setHasMore(page.length === 20);
+    setLoadError(false);
+    try {
+      const page = await api.posts.feed(before);
+      setPosts((prev) => (before ? [...(prev || []), ...page] : page));
+      setHasMore(page.length === 20);
+    } catch {
+      setPosts((prev) => prev ?? []);
+      setLoadError(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -37,7 +47,15 @@ export default function Feed() {
       <CreatePost onCreated={handleCreated} />
 
       {posts === null && <p className="muted center">Loading your feed…</p>}
-      {posts?.length === 0 && (
+      {loadError && (
+        <div className="feed-load-error">
+          <p className="muted">Couldn't reach the feed -- check your connection.</p>
+          <button className="btn-secondary" onClick={() => load()}>
+            Try again
+          </button>
+        </div>
+      )}
+      {!loadError && posts?.length === 0 && (
         <p className="muted center">
           Nothing here yet. Add some friends and share your first post!
         </p>
