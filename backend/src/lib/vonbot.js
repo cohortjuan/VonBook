@@ -91,3 +91,39 @@ export async function runVonBotTick() {
 
   return null;
 }
+
+// posts a one-off, human-written caption as VonBot -- see routes/vonbot.js's
+// /announce. Separate from runVonBotTick's automatic RSS reposts since this
+// is for things that need real copy (a feature announcement, etc.), not a
+// feed item pulled from a source. Reuses VonBot's current avatar as the
+// post's photo when he has one, so an occasional announcement like this
+// doesn't need a separate image upload step.
+export async function postVonBotAnnouncement(caption) {
+  const vonbotResult = await pool.query("SELECT id, avatar_url FROM users WHERE username = $1 AND deleted_at IS NULL", [
+    VONBOT_USERNAME,
+  ]);
+  const vonbot = vonbotResult.rows[0];
+  if (!vonbot) throw new Error("vonbot doesn't have an account yet -- it's created automatically on its first successful posting tick");
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const postResult = await client.query(`INSERT INTO posts (author_id, caption, is_public) VALUES ($1, $2, true) RETURNING id`, [
+      vonbot.id,
+      caption,
+    ]);
+    if (vonbot.avatar_url) {
+      await client.query(`INSERT INTO post_media (post_id, media_url, media_type, position) VALUES ($1, $2, 'image', 0)`, [
+        postResult.rows[0].id,
+        vonbot.avatar_url,
+      ]);
+    }
+    await client.query('COMMIT');
+    return postResult.rows[0].id;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
