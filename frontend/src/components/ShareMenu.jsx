@@ -22,7 +22,8 @@ export default function ShareMenu({ post }) {
 
   function shareToFacebook() {
     setOpen(false);
-    const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.origin)}&quote=${encodeURIComponent(shareText())}`;
+    const postUrl = `${window.location.origin}/post/${post.id}`;
+    const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(postUrl)}&quote=${encodeURIComponent(shareText())}`;
     window.open(url, '_blank', 'noopener,noreferrer,width=580,height=520');
   }
 

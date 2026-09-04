@@ -314,7 +314,7 @@ export default function Profile() {
 function GridTile({ post }) {
   const cover = post.media?.[0];
   return (
-    <div className="grid-tile">
+    <Link to={`/post/${post.id}`} className="grid-tile">
       {cover ? (
         cover.media_type === 'video' ? (
           <video src={getFileUrl(cover.media_url)} muted />
@@ -324,6 +324,6 @@ function GridTile({ post }) {
       ) : (
         <div className="grid-tile-text">{post.caption}</div>
       )}
-    </div>
+    </Link>
   );
 }

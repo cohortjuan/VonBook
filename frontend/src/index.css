@@ -1015,6 +1015,7 @@ button.linked-badge {
   gap: 3px;
 }
 .grid-tile {
+  display: block;
   aspect-ratio: 1;
   background: var(--surface-2);
   overflow: hidden;

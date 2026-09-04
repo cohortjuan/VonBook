@@ -170,6 +170,40 @@ postsRouter.get('/tagged/:username', async (req, res, next) => {
   }
 });
 
+// GET /api/posts/:postId -- a single post's own page (e.g. tapping a tile
+// on someone's profile grid, or a share link). Registered after the
+// literal /feed, /user/:username and /tagged/:username routes above so
+// those aren't shadowed by this catch-all single path segment. Same
+// visibility rule as everywhere else: your own, a friend's, or anyone's
+// public post, and not hidden unless you're a dev.
+postsRouter.get('/:postId', async (req, res, next) => {
+  try {
+    const postId = Number(req.params.postId);
+    if (!Number.isInteger(postId)) return res.status(404).json({ error: 'post not found' });
+
+    const result = await pool.query(
+      `SELECT p.id, p.caption, p.game_tag, p.is_public, p.hidden_at, p.link_url, p.link_title, p.link_image_url, p.created_at, ${AUTHOR_COLUMNS}
+       FROM posts p JOIN users u ON u.id = p.author_id
+       WHERE p.id = $1 AND p.deleted_at IS NULL AND (p.hidden_at IS NULL OR $2 = true)`,
+      [postId, req.user.is_dev],
+    );
+    const post = result.rows[0];
+    if (!post) return res.status(404).json({ error: 'post not found' });
+
+    if (post.author_id !== req.user.id) {
+      if (await isBlockedEitherWay(req.user.id, post.author_id)) return res.status(404).json({ error: 'post not found' });
+      if (!post.is_public && !(await areFriends(req.user.id, post.author_id))) {
+        return res.status(404).json({ error: 'post not found' });
+      }
+    }
+
+    const [full] = await attachMediaAndCounts([post], req.user.id);
+    res.json(full);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/posts { caption, game_tag?, is_public?, link_url? } + up to 10 files under field "media"
 postsRouter.post('/', mediaUpload.array('media', 10), async (req, res, next) => {
   try {

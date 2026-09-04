@@ -122,6 +122,7 @@ export const api = {
   posts: {
     feed: (before) => request(`/posts/feed${before ? `?before=${before}` : ''}`),
     byUser: (username) => request(`/posts/user/${encodeURIComponent(username)}`),
+    get: (postId) => request(`/posts/${postId}`),
     tagged: (username) => request(`/posts/tagged/${encodeURIComponent(username)}`),
     create: (formData) => request('/posts', { method: 'POST', body: formData }),
     setVisibility: (postId, isPublic) => request(`/posts/${postId}`, { method: 'PATCH', body: JSON.stringify({ is_public: isPublic }) }),

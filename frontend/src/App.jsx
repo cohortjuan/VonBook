@@ -11,6 +11,7 @@ import Signup from './pages/Signup.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import Profile from './pages/Profile.jsx';
+import PostDetail from './pages/PostDetail.jsx';
 import Settings from './pages/Settings.jsx';
 import Friends from './pages/Friends.jsx';
 import Messages from './pages/Messages.jsx';
@@ -44,6 +45,7 @@ export default function App() {
                   <Route path="/notifications" element={<Notifications />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/u/:username" element={<Profile />} />
+                  <Route path="/post/:id" element={<PostDetail />} />
                 </Route>
                 <Route path="*" element={<SpaceInvaders />} />
               </Routes>
