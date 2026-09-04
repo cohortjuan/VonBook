@@ -130,6 +130,22 @@ function extractSuggestedModel(message) {
   return matches.length >= 2 ? matches[1] : null;
 }
 
+// "The model is overloaded. Please try again later." -- a real, common,
+// genuinely transient Gemini error under high demand on the free tier
+// (503/UNAVAILABLE), unlike everything else this file has had to work
+// around tonight (those were all real bugs/config issues, not the
+// provider being flaky). Worth a short, bounded retry rather than
+// surfacing it as a failure on the first attempt.
+function isOverloaded(message) {
+  return /"code":\s*503|\bUNAVAILABLE\b|\boverloaded\b/i.test(message || '');
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const OVERLOAD_RETRY_DELAYS_MS = [500, 1500];
+
 // Interactions API instead of the older models.generateContent -- Google's
 // own 404 on a deprecated model explicitly said "We recommend you to use
 // the Interactions API", and this is also what its current getting-started
@@ -163,26 +179,40 @@ export async function askVonBot(messageText, previousInteractionId) {
   // empty turn (the API rejects that outright)
   if (!messageText) return { text: NO_TEXT_FALLBACK, interactionId: previousInteractionId };
 
-  const model = await resolveModel();
+  let model = await resolveModel();
 
   let response;
-  try {
-    response = await generate(model, messageText, previousInteractionId);
-  } catch (err) {
-    const suggested = extractSuggestedModel(err.message);
-    if (!suggested || suggested === model) {
+  let overloadAttempt = 0;
+  // bounded on total iterations too, not just overload retries -- belt
+  // and suspenders against any combination of the two retry reasons ever
+  // looping more than a handful of times
+  for (let totalAttempts = 0; ; totalAttempts++) {
+    try {
+      response = await generate(model, messageText, previousInteractionId);
+      break;
+    } catch (err) {
+      if (totalAttempts >= 5) throw new Error(`VonBot AI request failed: ${err.message}`);
+
+      const suggested = extractSuggestedModel(err.message);
+      if (suggested && suggested !== model) {
+        console.log(`VonBot AI: "${model}" was rejected, switching to Google's suggested replacement "${suggested}"`);
+        resolvedModel = suggested; // cache the correction for every message after this one
+        model = suggested;
+        continue;
+      }
+
+      if (isOverloaded(err.message) && overloadAttempt < OVERLOAD_RETRY_DELAYS_MS.length) {
+        const delay = OVERLOAD_RETRY_DELAYS_MS[overloadAttempt++];
+        console.log(`VonBot AI: model overloaded, retrying in ${delay}ms (attempt ${overloadAttempt}/${OVERLOAD_RETRY_DELAYS_MS.length})`);
+        await sleep(delay);
+        continue;
+      }
+
       // the SDK throws its own ApiError with a .message that already
       // includes Gemini's explanation (bad model id, quota, permission,
       // etc.) -- surfaced as-is rather than swallowed, so Render's logs
       // show exactly what went wrong
       throw new Error(`VonBot AI request failed: ${err.message}`);
-    }
-    console.log(`VonBot AI: "${model}" was rejected, retrying once with Google's suggested replacement "${suggested}"`);
-    resolvedModel = suggested; // cache the correction for every message after this one
-    try {
-      response = await generate(suggested, messageText, previousInteractionId);
-    } catch (err2) {
-      throw new Error(`VonBot AI request failed: ${err2.message}`);
     }
   }
 
