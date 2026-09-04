@@ -279,6 +279,14 @@ CREATE TABLE IF NOT EXISTS conversations (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- only ever set on a 1:1 conversation with VonBot -- Gemini's Interactions
+-- API is stateful (see lib/vonbotAI.js), so this is the one thing that
+-- needs to persist per-conversation: the id of VonBot's last reply there,
+-- passed back as previous_interaction_id so he remembers the conversation
+-- instead of every message starting fresh. null for every other
+-- conversation, and for a VonBot conversation before his first reply.
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS vonbot_interaction_id TEXT;
+
 CREATE TABLE IF NOT EXISTS conversation_participants (
   conversation_id  INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -15,7 +15,7 @@
 //    threshold for everything the AI *is* asked to answer, and a blocked
 //    response falls back to a safe deflection line rather than surfacing
 //    an error or an empty reply.
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold, FinishReason } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import { pool } from '../db/pool.js';
 
 const API_KEY = process.env.VONBOT_AI_API_KEY;
@@ -101,12 +101,15 @@ export function isSelfHarmMessage(text) {
 export const SELF_HARM_RESPONSE =
   "Hey, that sounds really heavy, and I want you to know I take it seriously even though I'm just a bot. Please talk to a parent, guardian, or another adult you trust -- and if it feels urgent, you can call or text 988 (Suicide & Crisis Lifeline) any time, day or night. I'm not able to really help with this myself. 💙";
 
-const SAFETY_SETTINGS = [
-  HarmCategory.HARM_CATEGORY_HARASSMENT,
-  HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-  HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-  HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-].map((category) => ({ category, threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE }));
+// the Interactions API (see below) uses plain lowercase strings here, not
+// the HARM_CATEGORY_* / BLOCK_LOW_AND_ABOVE enum constants the older
+// models.generateContent API used -- confirmed against the SDK's own
+// shipped type declarations (node_modules/@google/genai/dist/genai.d.ts),
+// not guessed, after two rounds of guessed field names cost real time.
+const SAFETY_SETTINGS = ['harassment', 'hate_speech', 'sexually_explicit', 'dangerous_content'].map((type) => ({
+  type,
+  threshold: 'block_low_and_above',
+}));
 
 const SAFE_DEFLECTION = "Let's talk about something else -- what game or show have you been into lately? 🎮";
 const NO_TEXT_FALLBACK = 'Nice! 👍';
@@ -127,86 +130,68 @@ function extractSuggestedModel(message) {
   return matches.length >= 2 ? matches[1] : null;
 }
 
-async function generate(model, contents, signal) {
-  return ai.models.generateContent({
-    model,
-    contents,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      safetySettings: SAFETY_SETTINGS,
-      // newer Gemini models spend part of maxOutputTokens on hidden
-      // "thinking" tokens before ever writing the visible reply -- a
-      // budget sized for just a short text message was getting entirely
-      // eaten by that, cutting the real answer off mid-word ("Mt. Everest
-      // is abot 29"). Explicitly setting thinkingConfig.thinkingBudget to
-      // disable it turned out to 400 INVALID_ARGUMENT on this model
-      // (valid thinking values are model-dependent, and not every model
-      // accepts 0) -- so rather than chase which models allow which
-      // thinkingConfig values, this just leaves plenty of headroom for
-      // both thinking and the real reply instead. maxOutputTokens is a
-      // ceiling, not a target, so a generous number here doesn't make
-      // VonBot write longer messages -- the system prompt's "keep it
-      // short" instruction still does that.
-      maxOutputTokens: 1024,
-      temperature: 0.9,
-      abortSignal: signal,
+// Interactions API instead of the older models.generateContent -- Google's
+// own 404 on a deprecated model explicitly said "We recommend you to use
+// the Interactions API", and this is also what its current getting-started
+// docs lead with. It's stateful: pass previous_interaction_id and Gemini
+// keeps the conversation's history server-side, so this file only ever
+// sends the one new message, not a rebuilt transcript every time (see
+// vonbot_interaction_id on conversations, set by routes/messages.js).
+async function generate(model, input, previousInteractionId) {
+  return ai.interactions.create(
+    {
+      model,
+      input,
+      previous_interaction_id: previousInteractionId || undefined,
+      system_instruction: SYSTEM_PROMPT,
+      safety_settings: SAFETY_SETTINGS,
+      generation_config: { max_output_tokens: 1024 },
     },
-  });
+    { timeout_ms: 15000 },
+  );
 }
 
-// history: array of { sender_id, body }, oldest first, from the same
-// conversation. mapped to Gemini's role: 'user' | 'model' turns.
-export async function askVonBot(history, vonbotId) {
+// messageText: the new human message only -- Gemini already has everything
+// before it via previousInteractionId (null/undefined for the first-ever
+// message in a conversation). Returns { text, interactionId } -- the
+// caller persists interactionId as that conversation's new
+// previous_interaction_id for next time.
+export async function askVonBot(messageText, previousInteractionId) {
   if (!ai) throw new Error('VonBot AI is not configured');
-
-  const contents = history
-    .filter((m) => m.body)
-    .map((m) => ({
-      role: m.sender_id === vonbotId ? 'model' : 'user',
-      parts: [{ text: m.body }],
-    }));
   // e.g. the triggering message was a photo with no caption -- nothing
   // text-based to hand the model, so skip the call rather than send an
   // empty turn (the API rejects that outright)
-  if (contents.length === 0) return NO_TEXT_FALLBACK;
+  if (!messageText) return { text: NO_TEXT_FALLBACK, interactionId: previousInteractionId };
 
   const model = await resolveModel();
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  let response;
   try {
-    let response;
-    try {
-      response = await generate(model, contents, controller.signal);
-    } catch (err) {
-      const suggested = extractSuggestedModel(err.message);
-      if (!suggested || suggested === model) {
-        // the SDK throws its own ApiError with a .message that already
-        // includes Gemini's explanation (bad model id, quota, permission,
-        // etc.) -- surfaced as-is rather than swallowed, so Render's logs
-        // show exactly what went wrong
-        throw new Error(`VonBot AI request failed: ${err.message}`);
-      }
-      console.log(`VonBot AI: "${model}" was rejected, retrying once with Google's suggested replacement "${suggested}"`);
-      resolvedModel = suggested; // cache the correction for every message after this one
-      try {
-        response = await generate(suggested, contents, controller.signal);
-      } catch (err2) {
-        throw new Error(`VonBot AI request failed: ${err2.message}`);
-      }
+    response = await generate(model, messageText, previousInteractionId);
+  } catch (err) {
+    const suggested = extractSuggestedModel(err.message);
+    if (!suggested || suggested === model) {
+      // the SDK throws its own ApiError with a .message that already
+      // includes Gemini's explanation (bad model id, quota, permission,
+      // etc.) -- surfaced as-is rather than swallowed, so Render's logs
+      // show exactly what went wrong
+      throw new Error(`VonBot AI request failed: ${err.message}`);
     }
-
-    // blocked before generation even started (the incoming turn itself
-    // tripped a safety category)
-    if (response.promptFeedback?.blockReason) return SAFE_DEFLECTION;
-
-    const candidate = response.candidates?.[0];
-    if (!candidate || candidate.finishReason === FinishReason.SAFETY) return SAFE_DEFLECTION;
-
-    return response.text?.trim() || SAFE_DEFLECTION;
-  } finally {
-    clearTimeout(timeout);
+    console.log(`VonBot AI: "${model}" was rejected, retrying once with Google's suggested replacement "${suggested}"`);
+    resolvedModel = suggested; // cache the correction for every message after this one
+    try {
+      response = await generate(suggested, messageText, previousInteractionId);
+    } catch (err2) {
+      throw new Error(`VonBot AI request failed: ${err2.message}`);
+    }
   }
+
+  // whatever the reason -- a safety block, an error mid-generation, an
+  // unsupported input -- no usable text just means a graceful redirect
+  // instead of silence or a crash, without needing to enumerate every
+  // possible non-"completed" status this API can return.
+  const text = response.output_text?.trim() || SAFE_DEFLECTION;
+  return { text, interactionId: response.id || previousInteractionId };
 }
 
 // VonBot's id never changes once its account exists (see getOrCreateVonBot

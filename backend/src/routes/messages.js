@@ -37,11 +37,16 @@ async function triggerVonBotReply(io, conversationId, humanId, otherParticipants
   if (isSelfHarmMessage(incomingBody)) {
     replyBody = SELF_HARM_RESPONSE;
   } else {
-    const historyResult = await pool.query(
-      `SELECT sender_id, body FROM messages WHERE conversation_id = $1 AND deleted_at IS NULL ORDER BY id DESC LIMIT 10`,
-      [conversationId],
-    );
-    replyBody = await askVonBot(historyResult.rows.reverse(), vonbotId);
+    // stateful: Gemini keeps this conversation's history server-side
+    // against its own interaction id, so only the new message plus that
+    // id ever needs to be sent -- see lib/vonbotAI.js
+    const convoResult = await pool.query('SELECT vonbot_interaction_id FROM conversations WHERE id = $1', [conversationId]);
+    const previousInteractionId = convoResult.rows[0]?.vonbot_interaction_id || null;
+    const { text, interactionId } = await askVonBot(incomingBody, previousInteractionId);
+    replyBody = text;
+    if (interactionId && interactionId !== previousInteractionId) {
+      await pool.query('UPDATE conversations SET vonbot_interaction_id = $1 WHERE id = $2', [interactionId, conversationId]);
+    }
   }
 
   const result = await pool.query(
