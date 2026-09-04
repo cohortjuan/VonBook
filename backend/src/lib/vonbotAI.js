@@ -135,14 +135,19 @@ async function generate(model, contents, signal) {
       systemInstruction: SYSTEM_PROMPT,
       safetySettings: SAFETY_SETTINGS,
       // newer Gemini models spend part of maxOutputTokens on hidden
-      // "thinking" tokens before ever writing the visible reply -- with a
-      // small budget meant for a short text message, that was eating the
-      // whole thing and cutting the actual answer off mid-word ("Mt.
-      // Everest is abot 29"). VonBot doesn't need chain-of-thought
-      // reasoning for casual chat, so thinking is turned off entirely
-      // (0 = disabled) rather than just raising the budget and hoping.
-      thinkingConfig: { thinkingBudget: 0 },
-      maxOutputTokens: 200,
+      // "thinking" tokens before ever writing the visible reply -- a
+      // budget sized for just a short text message was getting entirely
+      // eaten by that, cutting the real answer off mid-word ("Mt. Everest
+      // is abot 29"). Explicitly setting thinkingConfig.thinkingBudget to
+      // disable it turned out to 400 INVALID_ARGUMENT on this model
+      // (valid thinking values are model-dependent, and not every model
+      // accepts 0) -- so rather than chase which models allow which
+      // thinkingConfig values, this just leaves plenty of headroom for
+      // both thinking and the real reply instead. maxOutputTokens is a
+      // ceiling, not a target, so a generous number here doesn't make
+      // VonBot write longer messages -- the system prompt's "keep it
+      // short" instruction still does that.
+      maxOutputTokens: 1024,
       temperature: 0.9,
       abortSignal: signal,
     },
