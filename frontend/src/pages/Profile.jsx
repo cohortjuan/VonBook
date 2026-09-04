@@ -43,7 +43,8 @@ export default function Profile() {
   const [cropTarget, setCropTarget] = useState(null);
 
   const isSelf = profile?.relationship === 'self';
-  const canEditVonBotPhotos = me.is_dev && profile?.username === 'vonbot';
+  const isVonBot = profile?.username === 'vonbot';
+  const canEditVonBotPhotos = me.is_dev && isVonBot;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -227,7 +228,12 @@ export default function Profile() {
               </button>
             </>
           )}
-          {profile.relationship === 'none' && (
+          {isVonBot && profile.relationship !== 'friends' && (
+            <button className="btn-primary" onClick={handleMessage}>
+              💬 Ask VonBot
+            </button>
+          )}
+          {!isVonBot && profile.relationship === 'none' && (
             <button className="btn-primary" disabled={busy} onClick={() => withBusy(() => api.friends.sendRequest(profile.id))}>
               Add Friend
             </button>

@@ -7,8 +7,52 @@ import { isBlockedEitherWay } from '../lib/blocks.js';
 import { createNotification } from '../lib/notify.js';
 import { mediaUpload } from '../middleware/upload.js';
 import { finalizeUpload } from '../lib/cloudinary.js';
+import { askVonBot, getVonBotId, isSelfHarmMessage, isVonBotAIEnabled, SELF_HARM_RESPONSE } from '../lib/vonbotAI.js';
 
 export const messagesRouter = Router();
+
+// cheap in-memory cooldown so a burst of rapid messages doesn't blow
+// through a free-tier AI quota in one go -- same "in-memory is fine at
+// this scale" call as onlineSockets in sockets/index.js. resets on a
+// server restart, which just means the first message after a deploy
+// always gets an immediate reply -- harmless.
+const lastAIReplyAt = new Map();
+const AI_COOLDOWN_MS = 4000;
+
+// fired off after a message send (never awaited by the request) -- if the
+// other side of this 1:1 is VonBot, generates and posts a reply in the
+// same conversation a moment later, same as a real person typing back.
+// humanId is whoever just sent the triggering message, i.e. the recipient
+// of VonBot's reply notification.
+async function triggerVonBotReply(io, conversationId, humanId, otherParticipants, incomingBody) {
+  if (otherParticipants.length !== 1) return; // 1:1 only, same as the rest of DMs today
+  const vonbotId = await getVonBotId();
+  if (!vonbotId || otherParticipants[0].user_id !== vonbotId) return;
+
+  const last = lastAIReplyAt.get(conversationId) || 0;
+  if (Date.now() - last < AI_COOLDOWN_MS) return;
+  lastAIReplyAt.set(conversationId, Date.now());
+
+  let replyBody;
+  if (isSelfHarmMessage(incomingBody)) {
+    replyBody = SELF_HARM_RESPONSE;
+  } else {
+    const historyResult = await pool.query(
+      `SELECT sender_id, body FROM messages WHERE conversation_id = $1 AND deleted_at IS NULL ORDER BY id DESC LIMIT 10`,
+      [conversationId],
+    );
+    replyBody = await askVonBot(historyResult.rows.reverse(), vonbotId);
+  }
+
+  const result = await pool.query(
+    `INSERT INTO messages (conversation_id, sender_id, body) VALUES ($1, $2, $3)
+     RETURNING id, conversation_id, sender_id, body, media_url, media_type, reply_to_id, created_at`,
+    [conversationId, vonbotId, replyBody],
+  );
+  const reply = result.rows[0];
+  if (io) io.to(`conversation:${conversationId}`).emit('message:new', reply);
+  await createNotification({ io, recipientId: humanId, actorId: vonbotId, type: 'message', payload: { conversationId } });
+}
 
 // GET /api/messages/conversations -- every conversation you're in, with
 // the other participant (1:1 only for now) and a preview of the last message
@@ -49,7 +93,11 @@ messagesRouter.post('/conversations/direct/:userId', async (req, res, next) => {
     const otherId = Number(req.params.userId);
     if (!Number.isInteger(otherId)) return res.status(400).json({ error: 'invalid user id' });
     if (otherId === req.user.id) return res.status(400).json({ error: "can't message yourself" });
-    if (!(await areFriends(req.user.id, otherId))) return res.status(403).json({ error: 'you can only message friends' });
+    // VonBot skips the friend requirement -- "Ask VonBot" is meant to be a
+    // one-tap thing from his profile, not a friend-request round trip with
+    // a bot. everyone else still needs an accepted friendship to DM.
+    const isVonBot = otherId === (await getVonBotId());
+    if (!isVonBot && !(await areFriends(req.user.id, otherId))) return res.status(403).json({ error: 'you can only message friends' });
     if (await isBlockedEitherWay(req.user.id, otherId)) return res.status(403).json({ error: 'not available' });
 
     const conversationId = await getOrCreateDirectConversation(req.user.id, otherId);
@@ -157,6 +205,12 @@ messagesRouter.post('/conversations/:id/messages', mediaUpload.single('media'), 
 
     for (const { user_id: recipientId } of others.rows) {
       await createNotification({ io, recipientId, actorId: req.user.id, type: 'message', payload: { conversationId } });
+    }
+
+    if (isVonBotAIEnabled()) {
+      triggerVonBotReply(io, conversationId, req.user.id, others.rows, body).catch((err) =>
+        console.error('VonBot AI reply failed:', err.message),
+      );
     }
 
     res.status(201).json(message);
