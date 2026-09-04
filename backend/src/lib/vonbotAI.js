@@ -15,20 +15,50 @@
 //    threshold for everything the AI *is* asked to answer, and a blocked
 //    response falls back to a safe deflection line rather than surfacing
 //    an error or an empty reply.
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold, FinishReason } from '@google/genai';
 import { pool } from '../db/pool.js';
 
 const API_KEY = process.env.VONBOT_AI_API_KEY;
-// override with VONBOT_AI_MODEL if Google renames/retires this model id later
-// (gemini-2.0-flash 404'd against this Gemini account -- gemini-1.5-flash
-// is the older, longer-established id, more likely to still resolve; if
-// this one 404s too, the error now includes Gemini's own explanation --
-// see the catch below -- so the fix is a one-line env var change, not
-// another guess)
-const MODEL = process.env.VONBOT_AI_MODEL || 'gemini-1.5-flash';
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+// official SDK (googleapis/js-genai) instead of hand-rolled REST -- two
+// rounds of guessing raw JSON field names against Gemini's REST API
+// (system_instruction vs systemInstruction, generationConfig nesting,
+// model ids that kept 404ing) is two rounds too many. The SDK owns the
+// wire format; this file just has to get the SDK's own call shape right,
+// which is versioned and documented.
+const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
 
 export function isVonBotAIEnabled() {
-  return Boolean(API_KEY);
+  return Boolean(ai);
+}
+
+// hardcoding a model id turned out to be a losing bet twice in a row
+// (gemini-2.0-flash, then gemini-1.5-flash, both 404 "not found for API
+// version v1beta" against this specific Gemini account/region -- Google's
+// model lineup had moved on) -- rather than guess a third name, ask
+// Gemini's own model list what this key actually has access to and use
+// whatever it says. Resolved once per server process and cached, same
+// "cheap enough, no need to re-check every message" reasoning as
+// getVonBotId below. VONBOT_AI_MODEL still wins immediately if set, no
+// discovery call made at all in that case.
+let resolvedModel = process.env.VONBOT_AI_MODEL || null;
+
+async function resolveModel() {
+  if (resolvedModel) return resolvedModel;
+
+  const models = [];
+  for await (const model of await ai.models.list()) {
+    models.push(model);
+  }
+  const usable = models.filter((m) => m.supportedActions?.includes('generateContent'));
+  // prefer a "flash" model (fast, cheap, generous free-tier quota) over
+  // anything else usable, but fall back to whatever's actually offered
+  // rather than fail outright if naming conventions have moved on again
+  const chosen = usable.find((m) => /flash/i.test(m.name || '')) || usable[0];
+  if (!chosen) throw new Error('this Gemini API key has no model available that supports generateContent');
+
+  resolvedModel = (chosen.name || '').replace(/^models\//, '');
+  console.log(`VonBot AI: auto-selected Gemini model "${resolvedModel}" (set VONBOT_AI_MODEL to pin a specific one)`);
+  return resolvedModel;
 }
 
 const SYSTEM_PROMPT = `You are VonBot, the friendly bot mascot of VonBook -- a small social app built as a birthday present. You love gaming, anime, movies, and superhero news, and you post about them a few times a day. You're texting with one of the app's users right now.
@@ -71,10 +101,12 @@ export function isSelfHarmMessage(text) {
 export const SELF_HARM_RESPONSE =
   "Hey, that sounds really heavy, and I want you to know I take it seriously even though I'm just a bot. Please talk to a parent, guardian, or another adult you trust -- and if it feels urgent, you can call or text 988 (Suicide & Crisis Lifeline) any time, day or night. I'm not able to really help with this myself. 💙";
 
-const SAFETY_SETTINGS = ['HARASSMENT', 'HATE_SPEECH', 'SEXUALLY_EXPLICIT', 'DANGEROUS_CONTENT'].map((category) => ({
-  category: `HARM_CATEGORY_${category}`,
-  threshold: 'BLOCK_LOW_AND_ABOVE',
-}));
+const SAFETY_SETTINGS = [
+  HarmCategory.HARM_CATEGORY_HARASSMENT,
+  HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+  HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+  HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+].map((category) => ({ category, threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE }));
 
 const SAFE_DEFLECTION = "Let's talk about something else -- what game or show have you been into lately? 🎮";
 const NO_TEXT_FALLBACK = 'Nice! 👍';
@@ -82,7 +114,7 @@ const NO_TEXT_FALLBACK = 'Nice! 👍';
 // history: array of { sender_id, body }, oldest first, from the same
 // conversation. mapped to Gemini's role: 'user' | 'model' turns.
 export async function askVonBot(history, vonbotId) {
-  if (!API_KEY) throw new Error('VonBot AI is not configured');
+  if (!ai) throw new Error('VonBot AI is not configured');
 
   const contents = history
     .filter((m) => m.body)
@@ -95,38 +127,40 @@ export async function askVonBot(history, vonbotId) {
   // empty turn (the API rejects that outright)
   if (contents.length === 0) return NO_TEXT_FALLBACK;
 
+  const model = await resolveModel();
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const res = await fetch(`${API_URL}?key=${API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model,
         contents,
-        safetySettings: SAFETY_SETTINGS,
-        generationConfig: { maxOutputTokens: 200, temperature: 0.9 },
-      }),
-    });
-    if (!res.ok) {
-      // include Gemini's own error body (truncated) rather than just the
-      // status code -- it explains exactly what's wrong (bad model id, API
-      // not enabled, quota, etc.) instead of leaving that to guesswork
-      const bodyText = await res.text().catch(() => '');
-      throw new Error(`VonBot AI request failed: ${res.status} ${bodyText.slice(0, 300)}`);
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          safetySettings: SAFETY_SETTINGS,
+          maxOutputTokens: 200,
+          temperature: 0.9,
+          abortSignal: controller.signal,
+        },
+      });
+    } catch (err) {
+      // the SDK throws its own ApiError with a .message that already
+      // includes Gemini's explanation (bad model id, quota, permission,
+      // etc.) -- surfaced as-is rather than swallowed, so Render's logs
+      // show exactly what went wrong
+      throw new Error(`VonBot AI request failed: ${err.message}`);
     }
-    const data = await res.json();
 
     // blocked before generation even started (the incoming turn itself
     // tripped a safety category)
-    if (data.promptFeedback?.blockReason) return SAFE_DEFLECTION;
+    if (response.promptFeedback?.blockReason) return SAFE_DEFLECTION;
 
-    const candidate = data.candidates?.[0];
-    if (!candidate || candidate.finishReason === 'SAFETY') return SAFE_DEFLECTION;
+    const candidate = response.candidates?.[0];
+    if (!candidate || candidate.finishReason === FinishReason.SAFETY) return SAFE_DEFLECTION;
 
-    const text = candidate.content?.parts?.map((p) => p.text).join('').trim();
-    return text || SAFE_DEFLECTION;
+    return response.text?.trim() || SAFE_DEFLECTION;
   } finally {
     clearTimeout(timeout);
   }
