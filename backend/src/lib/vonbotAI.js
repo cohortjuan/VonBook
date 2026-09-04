@@ -111,6 +111,36 @@ const SAFETY_SETTINGS = [
 const SAFE_DEFLECTION = "Let's talk about something else -- what game or show have you been into lately? 🎮";
 const NO_TEXT_FALLBACK = 'Nice! 👍';
 
+// Gemini's ListModels response turned out to still list a model
+// (gemini-2.5-flash) as generateContent-capable that then 404s when
+// actually called -- "no longer available to new users" -- so ListModels
+// alone isn't a reliable source of truth for what this specific account
+// can invoke. When that happens, Gemini's own error message names the
+// exact replacement: `This model models/X is no longer available...
+// use models/Y instead`. X is the one that was just tried (named first);
+// Y is Google's own suggested fix (named second). Extracting that and
+// retrying once, rather than surfacing the failure, means a future
+// deprecation like this one self-heals on the next message instead of
+// needing another round of manual guessing.
+function extractSuggestedModel(message) {
+  const matches = [...(message || '').matchAll(/models\/([a-zA-Z0-9.\-]+)/g)].map((m) => m[1]);
+  return matches.length >= 2 ? matches[1] : null;
+}
+
+async function generate(model, contents, signal) {
+  return ai.models.generateContent({
+    model,
+    contents,
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      safetySettings: SAFETY_SETTINGS,
+      maxOutputTokens: 200,
+      temperature: 0.9,
+      abortSignal: signal,
+    },
+  });
+}
+
 // history: array of { sender_id, body }, oldest first, from the same
 // conversation. mapped to Gemini's role: 'user' | 'model' turns.
 export async function askVonBot(history, vonbotId) {
@@ -134,23 +164,23 @@ export async function askVonBot(history, vonbotId) {
   try {
     let response;
     try {
-      response = await ai.models.generateContent({
-        model,
-        contents,
-        config: {
-          systemInstruction: SYSTEM_PROMPT,
-          safetySettings: SAFETY_SETTINGS,
-          maxOutputTokens: 200,
-          temperature: 0.9,
-          abortSignal: controller.signal,
-        },
-      });
+      response = await generate(model, contents, controller.signal);
     } catch (err) {
-      // the SDK throws its own ApiError with a .message that already
-      // includes Gemini's explanation (bad model id, quota, permission,
-      // etc.) -- surfaced as-is rather than swallowed, so Render's logs
-      // show exactly what went wrong
-      throw new Error(`VonBot AI request failed: ${err.message}`);
+      const suggested = extractSuggestedModel(err.message);
+      if (!suggested || suggested === model) {
+        // the SDK throws its own ApiError with a .message that already
+        // includes Gemini's explanation (bad model id, quota, permission,
+        // etc.) -- surfaced as-is rather than swallowed, so Render's logs
+        // show exactly what went wrong
+        throw new Error(`VonBot AI request failed: ${err.message}`);
+      }
+      console.log(`VonBot AI: "${model}" was rejected, retrying once with Google's suggested replacement "${suggested}"`);
+      resolvedModel = suggested; // cache the correction for every message after this one
+      try {
+        response = await generate(suggested, contents, controller.signal);
+      } catch (err2) {
+        throw new Error(`VonBot AI request failed: ${err2.message}`);
+      }
     }
 
     // blocked before generation even started (the incoming turn itself
