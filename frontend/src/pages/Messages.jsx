@@ -1,16 +1,34 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
+import { useSocket } from '../context/SocketContext.jsx';
 import Avatar from '../components/Avatar.jsx';
 import DisplayName from '../components/DisplayName.jsx';
 import { timeAgo } from '../lib/timeAgo.js';
 
 export default function Messages() {
   const [conversations, setConversations] = useState(null);
+  const { socket } = useSocket();
 
   useEffect(() => {
     api.messages.conversations().then(setConversations).catch(() => setConversations([]));
   }, []);
+
+  // the inbox list itself never joins any one conversation's room (see
+  // Conversation.jsx for that), so a new message anywhere doesn't reach it
+  // directly -- but every socket auto-joins its own "user:<id>" room, and a
+  // 'message' notification always fires there too (backend/src/lib/notify.js).
+  // riding on that instead of a dedicated event keeps this in sync live
+  // without a second server-side broadcast to maintain.
+  useEffect(() => {
+    if (!socket) return;
+    function onNotification(n) {
+      if (n.type !== 'message') return;
+      api.messages.conversations().then(setConversations).catch(() => {});
+    }
+    socket.on('notification', onNotification);
+    return () => socket.off('notification', onNotification);
+  }, [socket]);
 
   if (conversations === null) return <p className="muted center page">Loading…</p>;
   if (conversations.length === 0) {

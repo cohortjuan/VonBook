@@ -7,6 +7,14 @@ import { fileURLToPath } from 'url';
 dotenv.config();
 
 const { Pool } = pg;
+
+// DATE columns (birthday) come back from pg as JS Date objects by default,
+// which JSON.stringify to a full UTC datetime like
+// "2026-09-04T00:00:00.000Z" -- that doesn't match the plain "YYYY-MM-DD"
+// an <input type="date"> requires, so the field silently renders empty on
+// the client even though the value saved fine. OID 1082 = date; keep it as
+// the raw "YYYY-MM-DD" string pg already parsed off the wire.
+pg.types.setTypeParser(1082, (val) => val);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = path.join(__dirname, '../../../database/schema.sql');
 
