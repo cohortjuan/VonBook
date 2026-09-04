@@ -46,6 +46,17 @@ notificationsRouter.post('/read-all', async (req, res, next) => {
   }
 });
 
+// DELETE /api/notifications -- clears every notification for the caller.
+// Scoped to recipient_id, so this can never touch anyone else's.
+notificationsRouter.delete('/', async (req, res, next) => {
+  try {
+    await pool.query('DELETE FROM notifications WHERE recipient_id = $1', [req.user.id]);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
 notificationsRouter.post('/:id/read', async (req, res, next) => {
   try {
     const result = await pool.query(

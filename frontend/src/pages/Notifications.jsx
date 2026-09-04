@@ -38,11 +38,24 @@ export default function Notifications() {
     }
   }
 
+  async function handleClearAll() {
+    if (!confirm('Delete all notifications? This can\'t be undone.')) return;
+    try {
+      await api.notifications.deleteAll();
+      setNotifications([]);
+    } catch {
+      // nothing to recover -- the list just stays as it was
+    }
+  }
+
   if (notifications === null) return <p className="muted center page">Loading…</p>;
   if (notifications.length === 0) return <p className="muted center page">No notifications yet.</p>;
 
   return (
     <div className="page notifications-page">
+      <button className="btn-secondary btn-small notifications-clear-all" onClick={handleClearAll}>
+        Clear all
+      </button>
       {notifications.map((n) => (
         <button key={n.id} className={`notification-row ${!n.read_at ? 'unread' : ''}`} onClick={() => handleClick(n)}>
           <Avatar user={{ display_name: n.actor_display_name, avatar_url: n.actor_avatar_url, is_founder: n.actor_is_founder }} size={40} />

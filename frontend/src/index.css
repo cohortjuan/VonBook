@@ -1407,6 +1407,10 @@ button.linked-badge {
 .notification-row-body {
   font-size: 0.88rem;
 }
+.notifications-clear-all {
+  display: block;
+  margin: 0 0 0.75rem auto;
+}
 
 /* ---------- calls ---------- */
 .call-modal-backdrop {

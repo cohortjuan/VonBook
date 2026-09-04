@@ -170,6 +170,7 @@ export const api = {
     unreadCount: () => request('/notifications/unread-count'),
     readAll: () => request('/notifications/read-all', { method: 'POST' }),
     read: (id) => request(`/notifications/${id}/read`, { method: 'POST' }),
+    deleteAll: () => request('/notifications', { method: 'DELETE' }),
   },
   calls: {
     history: () => request('/calls'),
