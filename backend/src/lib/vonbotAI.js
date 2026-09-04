@@ -19,7 +19,12 @@ import { pool } from '../db/pool.js';
 
 const API_KEY = process.env.VONBOT_AI_API_KEY;
 // override with VONBOT_AI_MODEL if Google renames/retires this model id later
-const MODEL = process.env.VONBOT_AI_MODEL || 'gemini-2.0-flash';
+// (gemini-2.0-flash 404'd against this Gemini account -- gemini-1.5-flash
+// is the older, longer-established id, more likely to still resolve; if
+// this one 404s too, the error now includes Gemini's own explanation --
+// see the catch below -- so the fix is a one-line env var change, not
+// another guess)
+const MODEL = process.env.VONBOT_AI_MODEL || 'gemini-1.5-flash';
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 export function isVonBotAIEnabled() {
@@ -104,7 +109,13 @@ export async function askVonBot(history, vonbotId) {
         generationConfig: { maxOutputTokens: 200, temperature: 0.9 },
       }),
     });
-    if (!res.ok) throw new Error(`VonBot AI request failed: ${res.status}`);
+    if (!res.ok) {
+      // include Gemini's own error body (truncated) rather than just the
+      // status code -- it explains exactly what's wrong (bad model id, API
+      // not enabled, quota, etc.) instead of leaving that to guesswork
+      const bodyText = await res.text().catch(() => '');
+      throw new Error(`VonBot AI request failed: ${res.status} ${bodyText.slice(0, 300)}`);
+    }
     const data = await res.json();
 
     // blocked before generation even started (the incoming turn itself

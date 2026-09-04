@@ -350,4 +350,17 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created ON notifications(recipient_id, created_at DESC);
 
+-- 'mention' (@mentions) and 'report' (post reporting) were added as real
+-- notification types in code well after the CHECK constraint above was
+-- written, and CREATE TABLE IF NOT EXISTS doesn't retroactively touch an
+-- existing table -- so on any database created before this line, every
+-- @mention or report notification insert was hitting this constraint and
+-- throwing (visibly: it crashed the whole comment/report request, not
+-- just silently skipping the notification). Drop + recreate on every boot
+-- is harmless and keeps this in sync the same way the rest of this file does.
+ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+ALTER TABLE notifications ADD CONSTRAINT notifications_type_check CHECK (
+  type IN ('friend_request', 'friend_accept', 'like', 'comment', 'message', 'platform_ping', 'missed_call', 'mention', 'report')
+);
+
 COMMIT;

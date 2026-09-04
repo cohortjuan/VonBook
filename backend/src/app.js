@@ -25,6 +25,15 @@ dotenv.config();
 
 export const app = express();
 
+// Render (like Heroku) puts one reverse proxy in front of this process,
+// which sets X-Forwarded-For to the real client IP. Without telling
+// Express to trust that one hop, express-rate-limit can't tell who's
+// actually making a request (it was throwing ERR_ERL_UNEXPECTED_X_
+// FORWARDED_FOR on every request in production logs) and req.ip resolves
+// to the proxy, not the visitor. `1` = trust exactly one hop, not "trust
+// every proxy" -- correct for Render's setup, not an open-ended trust.
+app.set('trust proxy', 1);
+
 const configuredOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
   .split(',')
   .map((o) => o.trim())
