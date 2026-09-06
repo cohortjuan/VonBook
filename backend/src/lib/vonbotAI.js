@@ -10,11 +10,14 @@
 //    a match skips the model entirely and returns SELF_HARM_RESPONSE, a
 //    fixed, human-written line. This is the one guarantee in this file
 //    that does not depend on an AI provider getting anything right.
-// 2. Gemini's own safetySettings (harassment / hate speech / sexual
-//    content / dangerous content) are set to the strictest available
-//    threshold for everything the AI *is* asked to answer, and a blocked
-//    response falls back to a safe deflection line rather than surfacing
-//    an error or an empty reply.
+// 2. Gemini's safety filtering (harassment / hate speech / sexual
+//    content / dangerous content) for everything the AI *is* asked to
+//    answer, and a blocked response falls back to a safe deflection line
+//    rather than surfacing an error or an empty reply. NOTE: the
+//    explicit safety_settings below are only accepted by some Gemini
+//    backends -- see the comment above safetySettingsSupported. Where
+//    they're rejected, Gemini's own default filtering still applies;
+//    layer 1 is the guarantee that never depends on any of this.
 import { GoogleGenAI } from '@google/genai';
 import { pool } from '../db/pool.js';
 
@@ -111,6 +114,28 @@ const SAFETY_SETTINGS = ['harassment', 'hate_speech', 'sexually_explicit', 'dang
   threshold: 'block_low_and_above',
 }));
 
+// ...but the SDK's type declarations are shared between the Gemini
+// Developer API (what an AI Studio key talks to) and the Gemini
+// Enterprise Agent Platform, and only the latter actually accepts
+// safety_settings on interactions.create. The Developer API 400s with
+// "The parameter 'safety_settings' is not available on the Gemini API
+// but it is available on the Gemini Enterprise Agent Platform." So the
+// field typechecking is NOT evidence the backend supports it.
+//
+// Rather than hardcode "off" and lose the setting for anyone running
+// this against a backend that does support it, send it, and drop it
+// permanently for this process if the API says it can't take it.
+// Dropping it is safe-but-weaker, not unsafe: the Developer API still
+// applies its OWN default filtering (blocks medium-and-above harm) when
+// no settings are supplied. What's lost is the tightening to
+// block_low_and_above -- not the filter. Layer 1 (SELF_HARM_PATTERNS,
+// checked before any API call) and the system prompt are unaffected.
+let safetySettingsSupported = true;
+
+function isSafetySettingsUnsupported(message) {
+  return /safety_settings.*not available|not available.*safety_settings/i.test(message || '');
+}
+
 const SAFE_DEFLECTION = "Let's talk about something else -- what game or show have you been into lately? 🎮";
 const NO_TEXT_FALLBACK = 'Nice! 👍';
 
@@ -167,7 +192,7 @@ async function generate(model, input, previousInteractionId) {
       input,
       previous_interaction_id: previousInteractionId || undefined,
       system_instruction: SYSTEM_PROMPT,
-      safety_settings: SAFETY_SETTINGS,
+      ...(safetySettingsSupported ? { safety_settings: SAFETY_SETTINGS } : {}),
       generation_config: { max_output_tokens: 1024 },
     },
     { timeout_ms: 15000 },
@@ -199,6 +224,16 @@ export async function askVonBot(messageText, previousInteractionId) {
       break;
     } catch (err) {
       if (totalAttempts >= 5) throw new Error(`VonBot AI request failed: ${err.message}`);
+
+      if (safetySettingsSupported && isSafetySettingsUnsupported(err.message)) {
+        console.warn(
+          'VonBot AI: this Gemini backend rejects safety_settings on interactions.create -- ' +
+            'falling back to its built-in default safety filtering for the rest of this process. ' +
+            'Self-harm pre-screening (layer 1) and the system prompt are unaffected.',
+        );
+        safetySettingsSupported = false; // cache for every message after this one
+        continue;
+      }
 
       const suggested = extractSuggestedModel(err.message);
       if (suggested && suggested !== model) {
