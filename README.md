@@ -2,7 +2,7 @@
 
 A full social platform in one app: profiles and a feed, real-time chat, audio/video calls, and a gaming hub. Built as a birthday present, with a founder account for the birthday boy.
 
-**🔴 Live: [von-book.vercel.app](https://von-book.vercel.app)** — React PWA on Vercel, Express + Socket.IO on Render, Postgres, media on Cloudinary.
+**🔴 Live: [von-book.vercel.app](https://von-book.vercel.app)** — React PWA on Vercel, Express + Socket.IO on Render, Postgres on Supabase, media on Cloudinary.
 
 ## ✨ Features
 
@@ -67,7 +67,7 @@ Copy `backend/.env.example` to `.env` first and set `FOUNDER_CLAIM_CODE`. The sc
 
 ## 🚀 Deploying
 
-**Backend (Render):** New → Blueprint → this repo. `render.yaml` provisions the web service and Postgres together, prompting for `FOUNDER_CLAIM_CODE` and `CORS_ORIGIN`.
+**Backend (Render):** New → Blueprint → this repo. `render.yaml` provisions the web service, prompting for `DATABASE_URL`, `FOUNDER_CLAIM_CODE` and `CORS_ORIGIN`. Postgres lives on Supabase in its own `vonbook` schema, reached through the transaction pooler, so paste that pooler connection string as `DATABASE_URL`.
 
 **Frontend (Vercel):** Import the same repo, set **Root Directory to `frontend`**, and add `VITE_SOCKET_URL` pointing at the Render URL. Then set `CORS_ORIGIN` on Render to the resulting Vercel URL.
 
@@ -79,7 +79,7 @@ REST calls are proxied through Vercel to Render (`frontend/vercel.json`), so the
 
 ### Good to know
 
-- Render's free Postgres **expires after 90 days** — upgrade or `pg_dump` before then
+- The database is on Supabase's free tier (no 90-day expiry like Render's free Postgres); Supabase pauses projects after a week of inactivity, so keep it in use
 - Render's free tier sleeps after 15 minutes idle, so the first request after a quiet spell takes ~50s to wake
 - Backend changes need **Manual Deploy → Deploy latest commit**; auto-deploy doesn't reliably fire
 - Dev accounts can see any user's email on hover — a deliberate moderation tool, never exposed to regular accounts
