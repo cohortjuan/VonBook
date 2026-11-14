@@ -24,7 +24,7 @@ A full social platform in one app: profiles and a feed, real-time chat, audio/vi
 - Blocking that severs visibility in both directions, and gamer tags for PSN/Xbox/PC
 
 **🤖 VonBot** — an automated member of the community
-- Posts a trending gaming/anime/movie/superhero story a few times a day, pulled from public RSS feeds (IGN, MyAnimeList, SlashFilm, ScreenRant)
+- Posts a trending gaming/anime/movie/superhero story once a day, pulled from public RSS feeds (IGN, MyAnimeList, SlashFilm, ScreenRant)
 - **Ask VonBot** — DM him and he answers for real, powered by Google Gemini. No friend request needed
 - Built for a teenage audience: anything matching self-harm language never reaches the AI at all and gets a fixed, human-written response pointing to a trusted adult and the 988 crisis line; everything else runs through Gemini's strictest content filters
 

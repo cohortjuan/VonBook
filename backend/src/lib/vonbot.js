@@ -5,10 +5,11 @@ import { FEEDS, fetchFeedItems } from './rssFeeds.js';
 
 const VONBOT_USERNAME = 'vonbot';
 const VONBOT_EMAIL = 'vonbot@vonbook.local';
+const MIN_HOURS_BETWEEN_POSTS = 20;
 
 const INTRO_CAPTION = `👋 Hey, I'm VonBot!
 
-I'm not a real person -- I'm a bot that keeps this feed a little more alive between real posts. A few times a day I'll post one trending pic from gaming, anime, movies, or superhero news, pulled from real outlets (IGN, MyAnimeList, SlashFilm, ScreenRant).
+I'm not a real person -- I'm a bot that keeps this feed a little more alive between real posts. Once a day I'll post one trending pic from gaming, anime, movies, or superhero news, pulled from real outlets (IGN, MyAnimeList, SlashFilm, ScreenRant).
 
 I'm always public, so you'll see my posts even if we're not friends. If I ever post something that shouldn't be here, hit 🚩 on it and it gets pulled for review right away.
 
@@ -35,7 +36,7 @@ async function getOrCreateVonBot() {
       VONBOT_USERNAME,
       passwordHash,
       'VonBot',
-      "🤖 I'm a bot, not Von! A few times a day I repost one trending pic from gaming, anime, movie, or superhero news to keep this feed a little more alive. See something that shouldn't be here? Hit 🚩 report on it.",
+      "🤖 I'm a bot, not Von! Once a day I repost one trending pic from gaming, anime, movie, or superhero news to keep this feed a little more alive. See something that shouldn't be here? Hit 🚩 report on it.",
     ],
   );
   return { id: result.rows[0].id, justCreated: true };
@@ -59,6 +60,15 @@ export async function runVonBotTick() {
     // keeps the intro as the one clear first thing anyone sees from VonBot
     return { postId: introResult.rows[0].id, title: 'intro post', label: 'intro' };
   }
+
+  // once-a-day cap: vonbot_seen gets exactly one row per RSS repost, so a
+  // row newer than MIN_HOURS_BETWEEN_POSTS means today's post already
+  // happened. 20h (not 24) so normal cron drift never skips a day.
+  const recent = await pool.query(
+    `SELECT 1 FROM vonbot_seen WHERE created_at > now() - make_interval(hours => $1) LIMIT 1`,
+    [MIN_HOURS_BETWEEN_POSTS],
+  );
+  if (recent.rows.length > 0) return null;
 
   const source = FEEDS[Math.floor(Math.random() * FEEDS.length)];
 
