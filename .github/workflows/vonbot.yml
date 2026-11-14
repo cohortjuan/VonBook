@@ -1,12 +1,12 @@
 name: VonBot posting tick
 
-# pings the backend a few times a day so VonBot reposts one fresh
+# pings the backend once a day so VonBot reposts one fresh
 # gaming/anime/movie/superhero image -- see backend/src/routes/vonbot.js.
 # Render's free tier has no built-in scheduler, so this (a free GitHub
 # Actions cron, already living in this repo) is what actually triggers it.
 #
 # NOTE: this does NOT keep the backend warm. Render's free tier sleeps
-# after 15 min idle and these run 4x/day, so each ping wakes it, VonBot
+# after 15 min idle and this runs 1x/day, so the ping wakes it, VonBot
 # posts, and it's asleep again 15 min later -- the backend is cold for
 # almost the whole day, and the first visitor after that waits ~50s for
 # it to boot. Keeping it warm would need a ping every <15 min (an uptime
@@ -16,17 +16,16 @@ name: VonBot posting tick
 # requires a VONBOT_KEY repo secret (Settings -> Secrets and variables ->
 # Actions) matching the VONBOT_KEY env var set on the Render backend.
 #
-# times below are UTC: 14:00 / 18:00 / 22:00 / 02:00 -- spread across US
-# afternoon/evening hours. GitHub may skip or delay a scheduled run under
-# load, and disables schedules entirely after 60 days with no commits to
-# the repo -- neither matters much for "a few times a day", but worth
-# knowing if a day goes quiet.
+# time below is UTC: 16:00 (noon US Eastern during daylight time, 11am
+# during standard time). The backend also refuses to post twice within 20
+# hours (see runVonBotTick in lib/vonbot.js), so a manual workflow_dispatch
+# or a delayed/duplicated schedule run can't double-post. GitHub may skip
+# or delay a scheduled run under load, and disables schedules entirely
+# after 60 days with no commits to the repo -- worth knowing if a day
+# goes quiet.
 on:
   schedule:
-    - cron: '0 14 * * *'
-    - cron: '0 18 * * *'
-    - cron: '0 22 * * *'
-    - cron: '0 2 * * *'
+    - cron: '0 16 * * *'
   workflow_dispatch: {}
 
 jobs:
